@@ -1,0 +1,9 @@
+; FUSION EA - Tayyor strategiya: MACD Crossover
+; MACD main signal liniyani kesib o'tsa savdo
+InpStrategyMode=0
+InpPreset=2
+InpLotMode=0
+InpFixedLot=0.10
+InpStopLossPoints=400
+InpTakeProfitPoints=800
+InpMaxPositions=1

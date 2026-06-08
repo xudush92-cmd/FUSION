@@ -5,9 +5,9 @@
 //+------------------------------------------------------------------+
 #property copyright "FUSION EA"
 #property link      ""
-#property version   "1.00"
-#property description "Trader qo'lda qoida quradigan, to'liq sozlanadigan MT5 robot."
-#property description "Indikatorlar, operatorlar, vaqt, risk va filtrlar - hammasi sozlanadi."
+#property version   "2.00"
+#property description "FUSION - to'liq sozlanadigan MT5 robot. 2 rejim:"
+#property description "PRESET (7 tayyor strategiya) yoki CUSTOM (trader o'zi qoida quradi)."
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -82,9 +82,60 @@ enum ENUM_EXITMODE
    EXIT_BOTH              // ikkalasi ham
 };
 
+// Strategiya rejimi: tayyor yoki maxsus
+enum ENUM_STRATMODE
+{
+   STRAT_PRESET = 0,  // Tayyor strategiyadan foydalanish
+   STRAT_CUSTOM       // O'zi qoida quradi (4+4 shart sloti)
+};
+
+// Tayyor strategiyalar ro'yxati (PRESET rejimida)
+enum ENUM_PRESET
+{
+   PRESET_RSI_REVERSAL = 0, // RSI reversal (RSI<30 BUY, >70 SELL)
+   PRESET_MA_CROSSOVER,     // MA crossover (tez/sekin MA kesishuvi)
+   PRESET_MACD_CROSS,       // MACD crossover (main/signal kesishuvi)
+   PRESET_BOLLINGER_BOUNCE, // Bollinger bounce (chiziqqa tegish)
+   PRESET_STOCHASTIC,       // Stochastic (oversold/overbought)
+   PRESET_CCI,              // CCI (-100/+100)
+   PRESET_TREND_FOLLOWING   // Trend following (MA yo'nalishi + ADX filtri)
+};
+
 //==================================================================
 //                    INPUTS (BARCHA SOZLAMALAR)
 //==================================================================
+
+//--- 0) STRATEGIYA REJIMI ----------------------------------------
+input group "=== 0. STRATEGIYA REJIMI ==="
+input ENUM_STRATMODE InpStrategyMode = STRAT_PRESET; // Rejim: PRESET (tayyor) yoki CUSTOM (o'zi quradi)
+input ENUM_PRESET    InpPreset       = PRESET_RSI_REVERSAL; // Tayyor strategiya (faqat PRESET rejimida)
+
+input group "--- Preset: RSI Reversal ---"
+input int    InpPR_RSI_Period = 14;  // RSI davri
+input double InpPR_RSI_Buy    = 30;  // BUY darajasi (RSI shundan past)
+input double InpPR_RSI_Sell   = 70;  // SELL darajasi (RSI shundan yuqori)
+
+input group "--- Preset: MA Crossover ---"
+input int    InpPR_MA_Fast    = 50;  // Tez MA davri
+input int    InpPR_MA_Slow    = 200; // Sekin MA davri
+
+input group "--- Preset: Bollinger Bounce ---"
+input int    InpPR_BB_Period  = 20;  // Bollinger davri
+
+input group "--- Preset: Stochastic ---"
+input int    InpPR_Stoch_K    = 5;   // Stochastic %K davri
+input double InpPR_Stoch_Buy  = 20;  // BUY darajasi (shundan past)
+input double InpPR_Stoch_Sell = 80;  // SELL darajasi (shundan yuqori)
+
+input group "--- Preset: CCI ---"
+input int    InpPR_CCI_Period = 14;  // CCI davri
+input double InpPR_CCI_Buy    = -100;// BUY darajasi (shundan past)
+input double InpPR_CCI_Sell   = 100; // SELL darajasi (shundan yuqori)
+
+input group "--- Preset: Trend Following ---"
+input int    InpPR_Trend_MA   = 100; // Trend MA davri (narx shundan yuqori=trend)
+input int    InpPR_Trend_ADXp = 14;  // ADX davri
+input double InpPR_Trend_ADXm = 25;  // Minimal ADX (trend kuchi)
 
 //--- 1) UMUMIY / TEXNIK ------------------------------------------
 input group "=== 1. UMUMIY / TEXNIK ==="
@@ -276,6 +327,12 @@ struct Condition
 Condition g_buy[4];
 Condition g_sell[4];
 
+// Faol logika (CUSTOM'da input'dan, PRESET'da strategiyadan o'rnatiladi)
+ENUM_LOGIC g_buyLogic;
+ENUM_LOGIC g_sellLogic;
+int        g_buyVotes;
+int        g_sellVotes;
+
 //==================================================================
 //                       OnInit
 //==================================================================
@@ -293,17 +350,37 @@ int OnInit()
       return(INIT_FAILED);
    }
 
-   // BUY shartlarni yuklash
-   LoadCond(g_buy[0], InpB1_On, InpB1_IndA, InpB1_PerA, InpB1_Op, InpB1_Cmp, InpB1_Val, InpB1_IndB, InpB1_PerB);
-   LoadCond(g_buy[1], InpB2_On, InpB2_IndA, InpB2_PerA, InpB2_Op, InpB2_Cmp, InpB2_Val, InpB2_IndB, InpB2_PerB);
-   LoadCond(g_buy[2], InpB3_On, InpB3_IndA, InpB3_PerA, InpB3_Op, InpB3_Cmp, InpB3_Val, InpB3_IndB, InpB3_PerB);
-   LoadCond(g_buy[3], InpB4_On, InpB4_IndA, InpB4_PerA, InpB4_Op, InpB4_Cmp, InpB4_Val, InpB4_IndB, InpB4_PerB);
+   // Shartlarni bo'shatish
+   ClearConditions();
 
-   // SELL shartlarni yuklash
-   LoadCond(g_sell[0], InpS1_On, InpS1_IndA, InpS1_PerA, InpS1_Op, InpS1_Cmp, InpS1_Val, InpS1_IndB, InpS1_PerB);
-   LoadCond(g_sell[1], InpS2_On, InpS2_IndA, InpS2_PerA, InpS2_Op, InpS2_Cmp, InpS2_Val, InpS2_IndB, InpS2_PerB);
-   LoadCond(g_sell[2], InpS3_On, InpS3_IndA, InpS3_PerA, InpS3_Op, InpS3_Cmp, InpS3_Val, InpS3_IndB, InpS3_PerB);
-   LoadCond(g_sell[3], InpS4_On, InpS4_IndA, InpS4_PerA, InpS4_Op, InpS4_Cmp, InpS4_Val, InpS4_IndB, InpS4_PerB);
+   if(InpStrategyMode == STRAT_CUSTOM)
+   {
+      // CUSTOM: trader o'zi qurgan 4+4 shartlarni yuklash
+      g_buyLogic  = InpBuyLogic;
+      g_sellLogic = InpSellLogic;
+      g_buyVotes  = InpBuyVotesNeeded;
+      g_sellVotes = InpSellVotesNeeded;
+
+      // BUY shartlarni yuklash
+      LoadCond(g_buy[0], InpB1_On, InpB1_IndA, InpB1_PerA, InpB1_Op, InpB1_Cmp, InpB1_Val, InpB1_IndB, InpB1_PerB);
+      LoadCond(g_buy[1], InpB2_On, InpB2_IndA, InpB2_PerA, InpB2_Op, InpB2_Cmp, InpB2_Val, InpB2_IndB, InpB2_PerB);
+      LoadCond(g_buy[2], InpB3_On, InpB3_IndA, InpB3_PerA, InpB3_Op, InpB3_Cmp, InpB3_Val, InpB3_IndB, InpB3_PerB);
+      LoadCond(g_buy[3], InpB4_On, InpB4_IndA, InpB4_PerA, InpB4_Op, InpB4_Cmp, InpB4_Val, InpB4_IndB, InpB4_PerB);
+
+      // SELL shartlarni yuklash
+      LoadCond(g_sell[0], InpS1_On, InpS1_IndA, InpS1_PerA, InpS1_Op, InpS1_Cmp, InpS1_Val, InpS1_IndB, InpS1_PerB);
+      LoadCond(g_sell[1], InpS2_On, InpS2_IndA, InpS2_PerA, InpS2_Op, InpS2_Cmp, InpS2_Val, InpS2_IndB, InpS2_PerB);
+      LoadCond(g_sell[2], InpS3_On, InpS3_IndA, InpS3_PerA, InpS3_Op, InpS3_Cmp, InpS3_Val, InpS3_IndB, InpS3_PerB);
+      LoadCond(g_sell[3], InpS4_On, InpS4_IndA, InpS4_PerA, InpS4_Op, InpS4_Cmp, InpS4_Val, InpS4_IndB, InpS4_PerB);
+
+      Print("FUSION: CUSTOM rejim - trader qoidalari yuklandi");
+   }
+   else
+   {
+      // PRESET: tanlangan tayyor strategiyani qurish
+      BuildPreset(InpPreset);
+      Print("FUSION: PRESET rejim - strategiya: ", EnumToString(InpPreset));
+   }
 
    g_dayStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
    g_dayStartDOY    = CurrentDayOfYear();
@@ -323,6 +400,81 @@ void LoadCond(Condition &c, bool on, ENUM_IND indA, int perA, ENUM_OP op,
               ENUM_CMP cmp, double val, ENUM_IND indB, int perB)
 {
    c.on=on; c.indA=indA; c.perA=perA; c.op=op; c.cmp=cmp; c.val=val; c.indB=indB; c.perB=perB;
+}
+
+//==================================================================
+//             Barcha shartlarni bo'shatish (o'chirish)
+//==================================================================
+void ClearConditions()
+{
+   for(int i=0; i<4; i++)
+   {
+      LoadCond(g_buy[i],  false, IND_NONE, 14, OP_GREATER, CMP_VALUE, 0, IND_NONE, 14);
+      LoadCond(g_sell[i], false, IND_NONE, 14, OP_GREATER, CMP_VALUE, 0, IND_NONE, 14);
+   }
+}
+
+//==================================================================
+//        TAYYOR STRATEGIYANI QURISH (PRESET rejimi)
+//==================================================================
+void BuildPreset(ENUM_PRESET preset)
+{
+   // Standart: bitta shartli strategiyalar uchun AND yetarli
+   g_buyLogic  = LOGIC_AND;
+   g_sellLogic = LOGIC_AND;
+   g_buyVotes  = 1;
+   g_sellVotes = 1;
+
+   switch(preset)
+   {
+      //--- 1) RSI Reversal: RSI<Buy -> BUY, RSI>Sell -> SELL ---
+      case PRESET_RSI_REVERSAL:
+         LoadCond(g_buy[0],  true, IND_RSI, InpPR_RSI_Period, OP_LESS,    CMP_VALUE, InpPR_RSI_Buy,  IND_NONE, 0);
+         LoadCond(g_sell[0], true, IND_RSI, InpPR_RSI_Period, OP_GREATER, CMP_VALUE, InpPR_RSI_Sell, IND_NONE, 0);
+         break;
+
+      //--- 2) MA Crossover: tez MA sekin MA ni kesib o'tsa ---
+      case PRESET_MA_CROSSOVER:
+         LoadCond(g_buy[0],  true, IND_MA, InpPR_MA_Fast, OP_CROSS_ABOVE, CMP_IND, 0, IND_MA, InpPR_MA_Slow);
+         LoadCond(g_sell[0], true, IND_MA, InpPR_MA_Fast, OP_CROSS_BELOW, CMP_IND, 0, IND_MA, InpPR_MA_Slow);
+         break;
+
+      //--- 3) MACD Crossover: main signal'ni kesib o'tsa ---
+      case PRESET_MACD_CROSS:
+         LoadCond(g_buy[0],  true, IND_MACD_MAIN, 12, OP_CROSS_ABOVE, CMP_IND, 0, IND_MACD_SIGNAL, 9);
+         LoadCond(g_sell[0], true, IND_MACD_MAIN, 12, OP_CROSS_BELOW, CMP_IND, 0, IND_MACD_SIGNAL, 9);
+         break;
+
+      //--- 4) Bollinger Bounce: narx pastki chiziqdan past -> BUY ---
+      case PRESET_BOLLINGER_BOUNCE:
+         LoadCond(g_buy[0],  true, IND_PRICE, 0, OP_LESS,    CMP_IND, 0, IND_BB_LOWER, InpPR_BB_Period);
+         LoadCond(g_sell[0], true, IND_PRICE, 0, OP_GREATER, CMP_IND, 0, IND_BB_UPPER, InpPR_BB_Period);
+         break;
+
+      //--- 5) Stochastic: Stoch<Buy -> BUY, Stoch>Sell -> SELL ---
+      case PRESET_STOCHASTIC:
+         LoadCond(g_buy[0],  true, IND_STOCH, InpPR_Stoch_K, OP_LESS,    CMP_VALUE, InpPR_Stoch_Buy,  IND_NONE, 0);
+         LoadCond(g_sell[0], true, IND_STOCH, InpPR_Stoch_K, OP_GREATER, CMP_VALUE, InpPR_Stoch_Sell, IND_NONE, 0);
+         break;
+
+      //--- 6) CCI: CCI<Buy -> BUY, CCI>Sell -> SELL ---
+      case PRESET_CCI:
+         LoadCond(g_buy[0],  true, IND_CCI, InpPR_CCI_Period, OP_LESS,    CMP_VALUE, InpPR_CCI_Buy,  IND_NONE, 0);
+         LoadCond(g_sell[0], true, IND_CCI, InpPR_CCI_Period, OP_GREATER, CMP_VALUE, InpPR_CCI_Sell, IND_NONE, 0);
+         break;
+
+      //--- 7) Trend Following: narx MA dan yuqori + ADX kuchli ---
+      case PRESET_TREND_FOLLOWING:
+         // BUY: Price > MA(trend) AND ADX > min
+         LoadCond(g_buy[0],  true, IND_PRICE, 0,              OP_GREATER, CMP_IND,   0,             IND_MA, InpPR_Trend_MA);
+         LoadCond(g_buy[1],  true, IND_ADX,   InpPR_Trend_ADXp, OP_GREATER, CMP_VALUE, InpPR_Trend_ADXm, IND_NONE, 0);
+         // SELL: Price < MA(trend) AND ADX > min
+         LoadCond(g_sell[0], true, IND_PRICE, 0,              OP_LESS,    CMP_IND,   0,             IND_MA, InpPR_Trend_MA);
+         LoadCond(g_sell[1], true, IND_ADX,   InpPR_Trend_ADXp, OP_GREATER, CMP_VALUE, InpPR_Trend_ADXm, IND_NONE, 0);
+         g_buyLogic  = LOGIC_AND; // ikkala shart ham bajarilsin
+         g_sellLogic = LOGIC_AND;
+         break;
+   }
 }
 
 //==================================================================
@@ -370,8 +522,8 @@ void OnTick()
       return;
 
    // Signal hisoblash
-   bool buySignal  = EvaluateSide(g_buy,  InpBuyLogic,  InpBuyVotesNeeded);
-   bool sellSignal = EvaluateSide(g_sell, InpSellLogic, InpSellVotesNeeded);
+   bool buySignal  = EvaluateSide(g_buy,  g_buyLogic,  g_buyVotes);
+   bool sellSignal = EvaluateSide(g_sell, g_sellLogic, g_sellVotes);
 
    // Qarama-qarshi signalda yopish
    if(InpExitMode == EXIT_OPPOSITE_SIGNAL || InpExitMode == EXIT_BOTH)

@@ -1,0 +1,13 @@
+; FUSION EA - Tayyor strategiya: RSI Reversal
+; RSI<30 -> BUY, RSI>70 -> SELL
+; Inputs oynasida "Load" tugmasi orqali yuklang.
+InpStrategyMode=0
+InpPreset=0
+InpPR_RSI_Period=14
+InpPR_RSI_Buy=30
+InpPR_RSI_Sell=70
+InpLotMode=0
+InpFixedLot=0.10
+InpStopLossPoints=300
+InpTakeProfitPoints=600
+InpMaxPositions=1

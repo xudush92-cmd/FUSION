@@ -2,19 +2,40 @@
 
 **Fully Unified System for Intelligent Order Navigation**
 
-FUSION — MetaTrader 5 (kompyuter / Windows) uchun **trader o'zi qoida quradigan**, to'liq sozlanadigan savdo roboti (Expert Advisor). Robotda oldindan tayyor strategiya yo'q — savdo mantig'ini **trader o'zi sozlamalar orqali** belgilaydi.
+FUSION — MetaTrader 5 (kompyuter / Windows) uchun **to'liq sozlanadigan** savdo roboti (Expert Advisor). **Ikki xil ishlash rejimi** bor:
+
+1. **PRESET** — 7 ta **tayyor strategiya**dan birini tanlab, bir zumda ishga tushirish
+2. **CUSTOM** — trader **o'zi qoida quradi** (indikator + operator + qiymat)
 
 > ⚠️ **Ogohlantirish:** Avtomatik savdo katta moliyaviy risk bilan bog'liq. Hech qanday robot foyda kafolatlamaydi. Avval **demo hisobda** va **Strategy Tester**da sinab ko'ring.
 
 ---
 
-## Asosiy g'oya
+## Ikki rejim (Strategiya rejimi)
 
+`InpStrategyMode` sozlamasi orqali rejim tanlanadi:
+
+### 🅰️ PRESET — tayyor strategiyalar
+`InpPreset` dropdown'dan birini tanlaysiz, robot avtomatik shu qoidalar bilan ishlaydi.
+Asosiy parametrlar (davr, daraja) ham **sozlanadi**.
+
+| # | Tayyor strategiya | Mantiq |
+|---|-------------------|--------|
+| 0 | **RSI Reversal** | RSI < 30 → BUY, RSI > 70 → SELL |
+| 1 | **MA Crossover** | Tez MA sekin MA ni kesib o'tsa |
+| 2 | **MACD Crossover** | MACD main signal'ni kesib o'tsa |
+| 3 | **Bollinger Bounce** | Narx pastki/yuqori chiziqqa tegsa |
+| 4 | **Stochastic** | Stoch < 20 → BUY, > 80 → SELL |
+| 5 | **CCI** | CCI < -100 → BUY, > 100 → SELL |
+| 6 | **Trend Following** | Narx MA dan yuqori/past + ADX > 25 |
+
+### 🅱️ CUSTOM — o'zi qoida quradi
 Robot — bu "ijrochi". Trader nima desa, shuni qiladi:
-- Trader **BUY** va **SELL** uchun shartlarni (conditions) quradi
+- Trader **BUY** va **SELL** uchun shartlarni (4+4 slot) quradi
 - Har bir shart: `[Indikator A] [Operator] [Qiymat yoki Indikator B]`
 - Shartlar **AND / OR / VOTING** mantig'i bilan birlashtiriladi
-- Robot shu qoidalar bajarilganda savdo ochadi/yopadi
+
+→ Tayyor `.set` fayllar `presets/` papkasida — Inputs oynasida **Load** bilan yuklang.
 
 ---
 
@@ -36,6 +57,7 @@ Robot — bu "ijrochi". Trader nima desa, shuni qiladi:
 
 | Bo'lim | Nimani boshqaradi |
 |--------|-------------------|
+| **0. Strategiya rejimi** | PRESET/CUSTOM tanlash + tayyor strategiya + preset parametrlari |
 | **1. Umumiy / Texnik** | Magic Number, comment, slippage, bildirishnomalar |
 | **2. Vaqt** | Savdo soatlari, kunlar, GMT offset, kun oxirida yopish |
 | **3. Juftlik / Spread** | Maksimal ruxsat etilgan spread |
@@ -43,9 +65,11 @@ Robot — bu "ijrochi". Trader nima desa, shuni qiladi:
 | **5. Lot / Foiz** | Qat'iy lot yoki risk %, maks. lot, maks. pozitsiya |
 | **6. Stop Loss / Take Profit** | SL/TP (Fixed/ATR/Off), trailing, break-even |
 | **7. Himoya / Limitlar** | Kunlik zarar/foyda, maks. drawdown |
-| **8. BUY qoidalari** | 4 ta shart sloti + mantiq (trader quradi) |
-| **9. SELL qoidalari** | 4 ta shart sloti + mantiq (trader quradi) |
+| **8. BUY qoidalari** | 4 ta shart sloti + mantiq (faqat CUSTOM rejimda) |
+| **9. SELL qoidalari** | 4 ta shart sloti + mantiq (faqat CUSTOM rejimda) |
 | **10. Chiqish** | SL/TP, qarama-qarshi signal, yoki ikkalasi |
+
+> Vaqt, lot, SL/TP, himoya sozlamalari **har ikki rejimda ham** ishlaydi.
 
 ---
 

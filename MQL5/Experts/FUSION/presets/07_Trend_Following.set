@@ -1,0 +1,15 @@
+; FUSION EA - Tayyor strategiya: Trend Following
+; Narx MA(100) dan yuqori + ADX>25 -> BUY (aksincha SELL)
+InpStrategyMode=0
+InpPreset=6
+InpPR_Trend_MA=100
+InpPR_Trend_ADXp=14
+InpPR_Trend_ADXm=25
+InpLotMode=0
+InpFixedLot=0.10
+InpStopLossPoints=500
+InpTakeProfitPoints=1000
+InpUseTrailing=true
+InpTrailingStart=300
+InpTrailingStep=200
+InpMaxPositions=1

@@ -1,0 +1,10 @@
+; FUSION EA - Tayyor strategiya: Bollinger Bounce
+; Narx pastki chiziqdan past -> BUY, yuqori chiziqdan baland -> SELL
+InpStrategyMode=0
+InpPreset=3
+InpPR_BB_Period=20
+InpLotMode=0
+InpFixedLot=0.10
+InpStopLossPoints=300
+InpTakeProfitPoints=400
+InpMaxPositions=1

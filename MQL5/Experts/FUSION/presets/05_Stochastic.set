@@ -1,0 +1,12 @@
+; FUSION EA - Tayyor strategiya: Stochastic
+; Stoch<20 -> BUY, Stoch>80 -> SELL
+InpStrategyMode=0
+InpPreset=4
+InpPR_Stoch_K=5
+InpPR_Stoch_Buy=20
+InpPR_Stoch_Sell=80
+InpLotMode=0
+InpFixedLot=0.10
+InpStopLossPoints=300
+InpTakeProfitPoints=500
+InpMaxPositions=1

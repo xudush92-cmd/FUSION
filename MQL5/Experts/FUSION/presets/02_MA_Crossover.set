@@ -1,0 +1,11 @@
+; FUSION EA - Tayyor strategiya: MA Crossover
+; Tez MA(50) sekin MA(200) ni kesib o'tsa savdo
+InpStrategyMode=0
+InpPreset=1
+InpPR_MA_Fast=50
+InpPR_MA_Slow=200
+InpLotMode=0
+InpFixedLot=0.10
+InpStopLossPoints=400
+InpTakeProfitPoints=800
+InpMaxPositions=1

@@ -1,0 +1,12 @@
+; FUSION EA - Tayyor strategiya: CCI
+; CCI<-100 -> BUY, CCI>100 -> SELL
+InpStrategyMode=0
+InpPreset=5
+InpPR_CCI_Period=14
+InpPR_CCI_Buy=-100
+InpPR_CCI_Sell=100
+InpLotMode=0
+InpFixedLot=0.10
+InpStopLossPoints=300
+InpTakeProfitPoints=500
+InpMaxPositions=1

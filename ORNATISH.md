@@ -73,7 +73,19 @@ Grafik o'ng burchakda jilmaygan yuz belgisi chiqsa — robot ishlayapti!
    - MT5 da **View -> Strategy Tester** (yoki Ctrl+R)
    - Expert: **FUSION**, juftlik va davrni tanlang
    - **Start** bosing — robot tarixiy ma'lumotda qanday ishlashini ko'rasiz
-3. Tayyor sozlamani yuklash: Inputs oynasida **Load** -> `presets/RSI_reversal_example.set`
+3. Tayyor sozlamani yuklash: Inputs oynasida **Load** -> `presets/01_RSI_Reversal.set` (yoki boshqa tayyor strategiya)
+
+---
+
+## Strategiya tanlash (2 rejim)
+
+FUSION'da **Inputs -> "0. STRATEGIYA REJIMI"** bo'limida tanlaysiz:
+
+- **PRESET** (tavsiya, oson): `InpPreset` dan tayyor strategiya tanlang
+  (RSI, MA Crossover, MACD, Bollinger, Stochastic, CCI, Trend Following)
+- **CUSTOM**: o'zingiz BUY/SELL shartlarini qurasiz (8 va 9-bo'limlar)
+
+Eng oson yo'l — `presets/` papkasidagi tayyor `.set` fayllardan birini **Load** qilish.
 
 ---
 

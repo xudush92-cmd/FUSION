@@ -1,0 +1,37 @@
+; FUSION EA - CUSTOM rejim namunasi (trader o'zi quradi)
+; Misol: RSI<35 VA narx MA(200) dan yuqori -> BUY (trend bo'yicha)
+InpStrategyMode=1
+; --- BUY shartlari ---
+InpBuyLogic=0
+InpB1_On=true
+InpB1_IndA=3
+InpB1_PerA=14
+InpB1_Op=1
+InpB1_Cmp=0
+InpB1_Val=35
+InpB2_On=true
+InpB2_IndA=1
+InpB2_PerA=0
+InpB2_Op=0
+InpB2_Cmp=1
+InpB2_IndB=2
+InpB2_PerB=200
+; --- SELL shartlari ---
+InpSellLogic=0
+InpS1_On=true
+InpS1_IndA=3
+InpS1_PerA=14
+InpS1_Op=0
+InpS1_Cmp=0
+InpS1_Val=65
+InpS2_On=true
+InpS2_IndA=1
+InpS2_PerA=0
+InpS2_Op=1
+InpS2_Cmp=1
+InpS2_IndB=2
+InpS2_PerB=200
+InpLotMode=0
+InpFixedLot=0.10
+InpStopLossPoints=300
+InpTakeProfitPoints=600

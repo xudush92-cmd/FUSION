@@ -22,7 +22,8 @@ Robot — bu "ijrochi". Trader nima desa, shuni qiladi:
 
 1. MetaTrader 5 ni oching
 2. `File → Open Data Folder` → `MQL5/Experts/` papkasini oching
-3. `FUSION.mq5` faylini shu papkaga ko'chiring
+3. Ushbu repodagi `MQL5/Experts/FUSION/` papkasini shu yerga ko'chiring
+   (ya'ni natija: `.../MQL5/Experts/FUSION/FUSION.mq5`)
 4. MT5 da `Navigator → Expert Advisors` → o'ng tugma → `Refresh`
 5. `FUSION` ustiga ikki marta bosing (yoki MetaEditor'da `Compile` qiling)
 6. Robotni kerakli grafik (chart) ustiga sudrab tashlang

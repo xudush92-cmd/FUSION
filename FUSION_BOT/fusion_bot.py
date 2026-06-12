@@ -1,0 +1,492 @@
+"""
+FUSION Bot — Telegram orqali MT5 robotini boshqarish
+Ko'p foydalanuvchili: admin hisob qo'shadi, foydalanuvchilar o'z robotini boshqaradi.
+"""
+import asyncio
+import logging
+from aiogram import Bot, Dispatcher, Router, F
+from aiogram.types import Message, CallbackQuery
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+from config import BOT_TOKEN, ADMIN_IDS
+import database as db
+import mt5_bridge
+from keyboards import (
+    admin_menu_kb, user_menu_kb, strategy_kb, settings_kb, confirm_kb
+)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("FUSION_BOT")
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+router = Router()
+
+
+# === FSM HOLATLARI ===
+
+class AddUserStates(StatesGroup):
+    waiting_user_id = State()
+    waiting_mt5_login = State()
+    waiting_mt5_server = State()
+    waiting_mt5_password = State()
+
+class RemoveUserStates(StatesGroup):
+    waiting_user_id = State()
+
+class SettingsStates(StatesGroup):
+    waiting_value = State()
+
+
+# === YORDAMCHI ===
+
+def is_admin(user_id: int) -> bool:
+    return user_id in ADMIN_IDS
+
+
+# === /start BUYRUQ ===
+
+@router.message(Command("start"))
+async def cmd_start(message: Message):
+    user_id = message.from_user.id
+
+    if is_admin(user_id):
+        await message.answer(
+            "🤖 **FUSION Boshqaruv Paneli**\n\n"
+            "Siz ADMIN sifatida kirdingiz.\n"
+            "Foydalanuvchilarni boshqaring:",
+            reply_markup=admin_menu_kb(),
+            parse_mode="Markdown"
+        )
+    else:
+        user = await db.get_user(user_id)
+        if user and user["status"] == "active":
+            await message.answer(
+                "🤖 **FUSION Robot**\n\n"
+                f"Strategiya: {user['strategy']}\n"
+                f"Robot: {'🟢 Ishlayapti' if user['robot_running'] else '🔴 To\\'xtatilgan'}\n\n"
+                "Boshqarish:",
+                reply_markup=user_menu_kb(),
+                parse_mode="Markdown"
+            )
+        else:
+            await message.answer(
+                "⛔ Sizga ruxsat berilmagan.\n"
+                "Admin bilan bog'laning."
+            )
+
+
+# ============================================================
+#                    ADMIN HANDLERLARI
+# ============================================================
+
+@router.callback_query(F.data == "admin:users")
+async def admin_users_list(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return
+    users = await db.get_all_users()
+    if not users:
+        await callback.message.edit_text("👥 Hozircha foydalanuvchi yo'q.",
+                                         reply_markup=admin_menu_kb())
+        return
+    text = "👥 **Foydalanuvchilar:**\n\n"
+    for u in users:
+        status_icon = "🟢" if u["status"] == "active" else "🔴"
+        robot_icon = "▶️" if u["robot_running"] else "⏹"
+        text += (
+            f"{status_icon} `{u['user_id']}` | "
+            f"{u.get('username', '-')} | "
+            f"MT5:{u['mt5_login'] or '-'} | "
+            f"Robot:{robot_icon} | "
+            f"{u['strategy']}\n"
+        )
+    await callback.message.edit_text(text, reply_markup=admin_menu_kb(), parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:add_user")
+async def admin_add_user_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text("➕ Yangi foydalanuvchi Telegram ID sini kiriting:")
+    await state.set_state(AddUserStates.waiting_user_id)
+    await callback.answer()
+
+
+@router.message(AddUserStates.waiting_user_id)
+async def admin_add_user_id(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        new_uid = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Noto'g'ri ID. Raqam kiriting:")
+        return
+    await state.update_data(new_uid=new_uid)
+    await message.answer(f"✅ ID: `{new_uid}`\n\nMT5 **login raqamini** kiriting:", parse_mode="Markdown")
+    await state.set_state(AddUserStates.waiting_mt5_login)
+
+
+@router.message(AddUserStates.waiting_mt5_login)
+async def admin_add_mt5_login(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        login = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Login raqam bo'lishi kerak:")
+        return
+    await state.update_data(mt5_login=login)
+    await message.answer("MT5 **server nomini** kiriting (masalan: MetaQuotes-Demo):", parse_mode="Markdown")
+    await state.set_state(AddUserStates.waiting_mt5_server)
+
+
+@router.message(AddUserStates.waiting_mt5_server)
+async def admin_add_mt5_server(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    server = message.text.strip()
+    await state.update_data(mt5_server=server)
+    await message.answer("MT5 **parolni** kiriting:", parse_mode="Markdown")
+    await state.set_state(AddUserStates.waiting_mt5_password)
+
+
+@router.message(AddUserStates.waiting_mt5_password)
+async def admin_add_mt5_password(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    password = message.text.strip()
+    data = await state.get_data()
+    await state.clear()
+
+    new_uid = data["new_uid"]
+    mt5_login = data["mt5_login"]
+    mt5_server = data["mt5_server"]
+
+    # Foydalanuvchini qo'shish
+    added = await db.add_user(new_uid, role="user")
+    if not added:
+        # allaqachon mavjud — faqat credentials yangilash
+        pass
+
+    await db.set_mt5_credentials(new_uid, mt5_login, mt5_server, password)
+
+    # Ulanishni tekshirish
+    connected = mt5_bridge.check_connection(mt5_login, mt5_server, password)
+
+    if connected:
+        await message.answer(
+            f"✅ **Foydalanuvchi qo'shildi!**\n\n"
+            f"Telegram ID: `{new_uid}`\n"
+            f"MT5 Login: `{mt5_login}`\n"
+            f"Server: {mt5_server}\n"
+            f"Ulanish: ✅ Muvaffaqiyatli\n\n"
+            f"Foydalanuvchi endi /start bilan kirishi mumkin.",
+            reply_markup=admin_menu_kb(),
+            parse_mode="Markdown"
+        )
+    else:
+        await message.answer(
+            f"⚠️ **Foydalanuvchi qo'shildi, LEKIN MT5 ulanish xatosi!**\n\n"
+            f"Telegram ID: `{new_uid}`\n"
+            f"MT5 Login: `{mt5_login}`\n"
+            f"Server: {mt5_server}\n"
+            f"Ulanish: ❌ Xato (login/server/parolni tekshiring)\n\n"
+            f"Ma'lumotlar saqlandi — keyinroq qayta ulanish mumkin.",
+            reply_markup=admin_menu_kb(),
+            parse_mode="Markdown"
+        )
+
+    # Parolni o'chirish (xavfsizlik)
+    try:
+        await message.delete()
+    except:
+        pass
+
+
+@router.callback_query(F.data == "admin:remove_user")
+async def admin_remove_user_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text("❌ O'chirmoqchi bo'lgan foydalanuvchi Telegram ID sini kiriting:")
+    await state.set_state(RemoveUserStates.waiting_user_id)
+    await callback.answer()
+
+
+@router.message(RemoveUserStates.waiting_user_id)
+async def admin_remove_user_confirm(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        uid = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Noto'g'ri ID:")
+        return
+    await state.clear()
+    removed = await db.remove_user(uid)
+    if removed:
+        await message.answer(f"✅ Foydalanuvchi `{uid}` o'chirildi.", reply_markup=admin_menu_kb(), parse_mode="Markdown")
+    else:
+        await message.answer(f"⚠️ `{uid}` topilmadi.", reply_markup=admin_menu_kb(), parse_mode="Markdown")
+
+
+@router.callback_query(F.data == "admin:status_all")
+async def admin_status_all(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return
+    users = await db.get_all_users()
+    if not users:
+        await callback.message.edit_text("Hisob yo'q.", reply_markup=admin_menu_kb())
+        await callback.answer()
+        return
+    text = "📊 **Umumiy holat:**\n\n"
+    for u in users:
+        if u["mt5_login"]:
+            info = mt5_bridge.get_account_info(u["mt5_login"], u["mt5_server"], u["mt5_password"])
+            if info:
+                text += (
+                    f"👤 `{u['user_id']}` | {info['name']}\n"
+                    f"   💰 Balans: ${info['balance']:.2f} | Foyda: ${info['profit']:.2f}\n\n"
+                )
+            else:
+                text += f"👤 `{u['user_id']}` | ❌ Ulanish xatosi\n\n"
+        else:
+            text += f"👤 `{u['user_id']}` | MT5 sozlanmagan\n\n"
+    await callback.message.edit_text(text, reply_markup=admin_menu_kb(), parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:stop_all")
+async def admin_stop_all(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return
+    users = await db.get_all_users()
+    count = 0
+    for u in users:
+        if u["mt5_login"] and u["robot_running"]:
+            mt5_bridge.close_all_positions(u["mt5_login"], u["mt5_server"], u["mt5_password"])
+            await db.set_robot_state(u["user_id"], False)
+            count += 1
+    await callback.message.edit_text(
+        f"🛑 **Hammasi to'xtatildi.** {count} ta hisob to'xtatildi.",
+        reply_markup=admin_menu_kb(), parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+# ============================================================
+#                 FOYDALANUVCHI HANDLERLARI
+# ============================================================
+
+@router.callback_query(F.data == "user:menu")
+async def user_menu(callback: CallbackQuery):
+    user = await db.get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    await callback.message.edit_text(
+        f"🤖 **FUSION Robot**\n\n"
+        f"Strategiya: {user['strategy']}\n"
+        f"Robot: {'🟢 Ishlayapti' if user['robot_running'] else '🔴 To\\'xtatilgan'}",
+        reply_markup=user_menu_kb(), parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "user:start")
+async def user_start_robot(callback: CallbackQuery):
+    user = await db.get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    if not user["mt5_login"]:
+        await callback.answer("⚠️ MT5 hisob sozlanmagan. Admin bilan bog'laning.", show_alert=True)
+        return
+    await db.set_robot_state(user["user_id"], True)
+    await callback.message.edit_text(
+        "▶️ **Robot ishga tushirildi!**\n\n"
+        f"Strategiya: {user['strategy']}\n"
+        "Robot bozorni kuzatyapti...",
+        reply_markup=user_menu_kb(), parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "user:stop")
+async def user_stop_robot(callback: CallbackQuery):
+    user = await db.get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    await db.set_robot_state(user["user_id"], False)
+    # Ochiq pozitsiyalarni yopish
+    if user["mt5_login"]:
+        closed = mt5_bridge.close_all_positions(user["mt5_login"], user["mt5_server"], user["mt5_password"])
+        await callback.message.edit_text(
+            f"⏹ **Robot to'xtatildi.**\n"
+            f"{closed} ta pozitsiya yopildi.",
+            reply_markup=user_menu_kb(), parse_mode="Markdown"
+        )
+    else:
+        await callback.message.edit_text("⏹ Robot to'xtatildi.", reply_markup=user_menu_kb(), parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "user:status")
+async def user_status(callback: CallbackQuery):
+    user = await db.get_user(callback.from_user.id)
+    if not user or not user["mt5_login"]:
+        await callback.answer("MT5 sozlanmagan", show_alert=True)
+        return
+    positions = mt5_bridge.get_positions(user["mt5_login"], user["mt5_server"], user["mt5_password"])
+    if not positions:
+        text = "📊 **Holat:** Ochiq savdo yo'q."
+    else:
+        text = f"📊 **Ochiq savdolar ({len(positions)} ta):**\n\n"
+        total_profit = 0
+        for p in positions:
+            emoji = "🟢" if p["profit"] >= 0 else "🔴"
+            text += f"{emoji} {p['type']} {p['symbol']} | {p['volume']} lot | ${p['profit']:.2f}\n"
+            total_profit += p["profit"]
+        text += f"\n💰 Jami foyda: ${total_profit:.2f}"
+    await callback.message.edit_text(text, reply_markup=user_menu_kb(), parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "user:balance")
+async def user_balance(callback: CallbackQuery):
+    user = await db.get_user(callback.from_user.id)
+    if not user or not user["mt5_login"]:
+        await callback.answer("MT5 sozlanmagan", show_alert=True)
+        return
+    info = mt5_bridge.get_account_info(user["mt5_login"], user["mt5_server"], user["mt5_password"])
+    if not info:
+        await callback.answer("❌ MT5 ulanish xatosi", show_alert=True)
+        return
+    text = (
+        f"💰 **Hisob ma'lumotlari:**\n\n"
+        f"👤 Ism: {info['name']}\n"
+        f"💵 Balans: ${info['balance']:.2f}\n"
+        f"📊 Equity: ${info['equity']:.2f}\n"
+        f"📈 Foyda: ${info['profit']:.2f}\n"
+        f"🔒 Margin: ${info['margin']:.2f}\n"
+        f"💎 Erkin margin: ${info['free_margin']:.2f}\n"
+        f"⚖️ Leverage: 1:{info['leverage']}\n"
+        f"💱 Valyuta: {info['currency']}"
+    )
+    await callback.message.edit_text(text, reply_markup=user_menu_kb(), parse_mode="Markdown")
+    await callback.answer()
+
+
+# === STRATEGIYA TANLASH ===
+
+@router.callback_query(F.data == "user:strategy")
+async def user_strategy_menu(callback: CallbackQuery):
+    user = await db.get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    await callback.message.edit_text(
+        f"🔄 **Strategiya tanlang:**\n\n"
+        f"Hozirgi: {user['strategy']}",
+        reply_markup=strategy_kb(), parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("strat:"))
+async def user_select_strategy(callback: CallbackQuery):
+    user = await db.get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    strategy = callback.data.split(":")[1]
+    await db.set_strategy(user["user_id"], strategy)
+    name = mt5_bridge.STRATEGIES.get(strategy, strategy)
+    await callback.message.edit_text(
+        f"✅ **Strategiya o'zgartirildi!**\n\n"
+        f"Yangi: {name}",
+        reply_markup=user_menu_kb(), parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+# === SOZLAMALAR ===
+
+@router.callback_query(F.data == "user:settings")
+async def user_settings_menu(callback: CallbackQuery):
+    user = await db.get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    settings = await db.get_settings(user["user_id"])
+    text = (
+        "⚙️ **Sozlamalar:**\n\n"
+        f"💎 Lot: {settings.get('lot', 0.10)}\n"
+        f"🛑 Stop Loss: {settings.get('sl', 300)} punkt\n"
+        f"🎯 Take Profit: {settings.get('tp', 600)} punkt\n"
+        f"⚖️ Risk: {settings.get('risk', 1.0)}%"
+    )
+    await callback.message.edit_text(text, reply_markup=settings_kb(), parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("set:"))
+async def user_change_setting(callback: CallbackQuery, state: FSMContext):
+    user = await db.get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    param = callback.data.split(":")[1]
+    labels = {"lot": "Yangi lot", "sl": "Yangi Stop Loss (punkt)", "tp": "Yangi Take Profit (punkt)", "risk": "Yangi Risk (%)"}
+    await state.update_data(setting_param=param)
+    await callback.message.edit_text(f"✏️ {labels.get(param, param)} qiymatini kiriting:")
+    await state.set_state(SettingsStates.waiting_value)
+    await callback.answer()
+
+
+@router.message(SettingsStates.waiting_value)
+async def user_set_value(message: Message, state: FSMContext):
+    user = await db.get_user(message.from_user.id)
+    if not user:
+        return
+    try:
+        value = float(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Raqam kiriting:")
+        return
+    data = await state.get_data()
+    param = data.get("setting_param", "lot")
+    await state.clear()
+
+    settings = await db.get_settings(user["user_id"])
+    settings[param] = value
+    await db.set_settings(user["user_id"], settings)
+
+    labels = {"lot": "💎 Lot", "sl": "🛑 Stop Loss", "tp": "🎯 Take Profit", "risk": "⚖️ Risk"}
+    await message.answer(
+        f"✅ {labels.get(param, param)} = {value} ga o'zgartirildi.",
+        reply_markup=user_menu_kb()
+    )
+
+
+# ============================================================
+#                           MAIN
+# ============================================================
+
+async def main():
+    await db.init_db()
+
+    # Admin'ni DB ga qo'shish (agar yo'q bo'lsa)
+    for admin_id in ADMIN_IDS:
+        await db.add_user(admin_id, role="admin")
+
+    dp.include_router(router)
+    logger.info("FUSION Bot ishga tushdi...")
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

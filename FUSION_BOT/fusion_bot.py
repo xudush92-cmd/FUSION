@@ -63,16 +63,15 @@ async def cmd_start(message: Message):
         robot_status = ""
         if user and user.get("mt5_login"):
             robot_status = (
-                f"\n📊 Strategiya: {user['strategy']}\n"
-                f"🤖 Robot: {'🟢 Ishlayapti' if user['robot_running'] else '🔴 Toxtatilgan'}\n"
+                f"\nStrategiya: {user['strategy']}\n"
+                f"Robot: {'Ishlayapti' if user['robot_running'] else 'Toxtatilgan'}\n"
             )
         await message.answer(
-            "🤖 **FUSION Boshqaruv Paneli**\n\n"
+            "FUSION Boshqaruv Paneli\n\n"
             "Siz ADMIN sifatida kirdingiz.\n"
             f"{robot_status}\n"
-            "⬇️ Boshqarish:",
-            reply_markup=admin_menu_kb(),
-            parse_mode="Markdown"
+            "Boshqarish:",
+            reply_markup=admin_menu_kb()
         )
     else:
         user = await db.get_user(user_id)

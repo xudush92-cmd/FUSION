@@ -174,7 +174,7 @@ async def admin_add_mt5_password(message: Message, state: FSMContext):
     await db.set_mt5_credentials(new_uid, mt5_login, mt5_server, password)
 
     # Ulanishni tekshirish
-    connected = mt5_bridge.check_connection(mt5_login, mt5_server, password)
+    connected, error_msg = mt5_bridge.check_connection(mt5_login, mt5_server, password)
 
     if connected:
         await message.answer(
@@ -193,7 +193,8 @@ async def admin_add_mt5_password(message: Message, state: FSMContext):
             f"Telegram ID: `{new_uid}`\n"
             f"MT5 Login: `{mt5_login}`\n"
             f"Server: {mt5_server}\n"
-            f"Ulanish: ❌ Xato (login/server/parolni tekshiring)\n\n"
+            f"Ulanish: ❌ {error_msg}\n\n"
+            f"💡 Yechim: login, server nomi va parolni tekshiring.\n"
             f"Ma'lumotlar saqlandi — keyinroq qayta ulanish mumkin.",
             reply_markup=admin_menu_kb(),
             parse_mode="Markdown"
@@ -202,8 +203,8 @@ async def admin_add_mt5_password(message: Message, state: FSMContext):
     # Parolni o'chirish (xavfsizlik)
     try:
         await message.delete()
-    except:
-        pass
+    except Exception:
+        logger.debug("Parol xabarini o'chirib bo'lmadi")
 
 
 @router.callback_query(F.data == "admin:remove_user")
@@ -244,14 +245,14 @@ async def admin_status_all(callback: CallbackQuery):
     text = "📊 **Umumiy holat:**\n\n"
     for u in users:
         if u["mt5_login"]:
-            info = mt5_bridge.get_account_info(u["mt5_login"], u["mt5_server"], u["mt5_password"])
+            info, error_msg = mt5_bridge.get_account_info(u["mt5_login"], u["mt5_server"], u["mt5_password"])
             if info:
                 text += (
                     f"👤 `{u['user_id']}` | {info['name']}\n"
                     f"   💰 Balans: ${info['balance']:.2f} | Foyda: ${info['profit']:.2f}\n\n"
                 )
             else:
-                text += f"👤 `{u['user_id']}` | ❌ Ulanish xatosi\n\n"
+                text += f"👤 `{u['user_id']}` | ❌ {error_msg}\n\n"
         else:
             text += f"👤 `{u['user_id']}` | MT5 sozlanmagan\n\n"
     await callback.message.edit_text(text, reply_markup=admin_menu_kb(), parse_mode="Markdown")
@@ -264,15 +265,19 @@ async def admin_stop_all(callback: CallbackQuery):
         return
     users = await db.get_all_users()
     count = 0
+    errors = []
     for u in users:
         if u["mt5_login"] and u["robot_running"]:
-            mt5_bridge.close_all_positions(u["mt5_login"], u["mt5_server"], u["mt5_password"])
+            closed, error_msg = mt5_bridge.close_all_positions(u["mt5_login"], u["mt5_server"], u["mt5_password"])
             await db.set_robot_state(u["user_id"], False)
             count += 1
-    await callback.message.edit_text(
-        f"🛑 **Hammasi to'xtatildi.** {count} ta hisob to'xtatildi.",
-        reply_markup=admin_menu_kb(), parse_mode="Markdown"
-    )
+            if error_msg:
+                errors.append(f"`{u['user_id']}`: {error_msg}")
+
+    text = f"🛑 **Hammasi to'xtatildi.** {count} ta hisob to'xtatildi."
+    if errors:
+        text += "\n\n⚠️ **Muammolar:**\n" + "\n".join(errors[:5])
+    await callback.message.edit_text(text, reply_markup=admin_menu_kb(), parse_mode="Markdown")
     await callback.answer()
 
 
@@ -304,6 +309,21 @@ async def user_start_robot(callback: CallbackQuery):
     if not user["mt5_login"]:
         await callback.answer("⚠️ MT5 hisob sozlanmagan. Admin bilan bog'laning.", show_alert=True)
         return
+
+    # MT5 ulanishni tekshirish
+    connected, error_msg = mt5_bridge.check_connection(
+        user["mt5_login"], user["mt5_server"], user["mt5_password"]
+    )
+    if not connected:
+        await callback.message.edit_text(
+            f"❌ **MT5 ga ulanib bo'lmadi!**\n\n"
+            f"Sabab: {error_msg}\n\n"
+            f"💡 Admin bilan bog'laning yoki keyinroq qayta urinib ko'ring.",
+            reply_markup=user_menu_kb(), parse_mode="Markdown"
+        )
+        await callback.answer()
+        return
+
     await db.set_robot_state(user["user_id"], True)
     await callback.message.edit_text(
         "▶️ **Robot ishga tushirildi!**\n\n"
@@ -323,12 +343,22 @@ async def user_stop_robot(callback: CallbackQuery):
     await db.set_robot_state(user["user_id"], False)
     # Ochiq pozitsiyalarni yopish
     if user["mt5_login"]:
-        closed = mt5_bridge.close_all_positions(user["mt5_login"], user["mt5_server"], user["mt5_password"])
-        await callback.message.edit_text(
-            f"⏹ **Robot to'xtatildi.**\n"
-            f"{closed} ta pozitsiya yopildi.",
-            reply_markup=user_menu_kb(), parse_mode="Markdown"
+        closed, error_msg = mt5_bridge.close_all_positions(
+            user["mt5_login"], user["mt5_server"], user["mt5_password"]
         )
+        if error_msg:
+            await callback.message.edit_text(
+                f"⏹ **Robot to'xtatildi.**\n"
+                f"{closed} ta pozitsiya yopildi.\n\n"
+                f"⚠️ {error_msg}",
+                reply_markup=user_menu_kb(), parse_mode="Markdown"
+            )
+        else:
+            await callback.message.edit_text(
+                f"⏹ **Robot to'xtatildi.**\n"
+                f"{closed} ta pozitsiya yopildi.",
+                reply_markup=user_menu_kb(), parse_mode="Markdown"
+            )
     else:
         await callback.message.edit_text("⏹ Robot to'xtatildi.", reply_markup=user_menu_kb(), parse_mode="Markdown")
     await callback.answer()
@@ -340,7 +370,21 @@ async def user_status(callback: CallbackQuery):
     if not user or not user["mt5_login"]:
         await callback.answer("MT5 sozlanmagan", show_alert=True)
         return
-    positions = mt5_bridge.get_positions(user["mt5_login"], user["mt5_server"], user["mt5_password"])
+
+    positions, error_msg = mt5_bridge.get_positions(
+        user["mt5_login"], user["mt5_server"], user["mt5_password"]
+    )
+
+    if error_msg:
+        await callback.message.edit_text(
+            f"❌ **MT5 ulanish xatosi**\n\n"
+            f"Sabab: {error_msg}\n\n"
+            f"💡 Internetni tekshiring yoki admin bilan bog'laning.",
+            reply_markup=user_menu_kb(), parse_mode="Markdown"
+        )
+        await callback.answer()
+        return
+
     if not positions:
         text = "📊 **Holat:** Ochiq savdo yo'q."
     else:
@@ -361,10 +405,22 @@ async def user_balance(callback: CallbackQuery):
     if not user or not user["mt5_login"]:
         await callback.answer("MT5 sozlanmagan", show_alert=True)
         return
-    info = mt5_bridge.get_account_info(user["mt5_login"], user["mt5_server"], user["mt5_password"])
+
+    info, error_msg = mt5_bridge.get_account_info(
+        user["mt5_login"], user["mt5_server"], user["mt5_password"]
+    )
+
     if not info:
-        await callback.answer("❌ MT5 ulanish xatosi", show_alert=True)
+        await callback.message.edit_text(
+            f"❌ **MT5 ulanish xatosi**\n\n"
+            f"Sabab: {error_msg}\n\n"
+            f"💡 Yechim: MT5 terminal ishlayotganini tekshiring.\n"
+            f"Muammo davom etsa admin bilan bog'laning.",
+            reply_markup=user_menu_kb(), parse_mode="Markdown"
+        )
+        await callback.answer()
         return
+
     text = (
         f"💰 **Hisob ma'lumotlari:**\n\n"
         f"👤 Ism: {info['name']}\n"
@@ -440,7 +496,12 @@ async def user_change_setting(callback: CallbackQuery, state: FSMContext):
         await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
         return
     param = callback.data.split(":")[1]
-    labels = {"lot": "Yangi lot", "sl": "Yangi Stop Loss (punkt)", "tp": "Yangi Take Profit (punkt)", "risk": "Yangi Risk (%)"}
+    labels = {
+        "lot": "Yangi lot (masalan: 0.10)",
+        "sl": "Yangi Stop Loss (punkt, masalan: 300)",
+        "tp": "Yangi Take Profit (punkt, masalan: 600)",
+        "risk": "Yangi Risk (%, masalan: 1.5)",
+    }
     await state.update_data(setting_param=param)
     await callback.message.edit_text(f"✏️ {labels.get(param, param)} qiymatini kiriting:")
     await state.set_state(SettingsStates.waiting_value)
@@ -455,10 +516,26 @@ async def user_set_value(message: Message, state: FSMContext):
     try:
         value = float(message.text.strip())
     except ValueError:
-        await message.answer("❌ Raqam kiriting:")
+        await message.answer("❌ Noto'g'ri format. Raqam kiriting (masalan: 0.10 yoki 300):")
         return
+
     data = await state.get_data()
     param = data.get("setting_param", "lot")
+
+    # Qiymat chegaralarini tekshirish
+    limits = {
+        "lot": (0.01, 100.0, "Lot 0.01 dan 100 gacha bo'lishi kerak"),
+        "sl": (10, 10000, "Stop Loss 10 dan 10000 punkt gacha"),
+        "tp": (10, 50000, "Take Profit 10 dan 50000 punkt gacha"),
+        "risk": (0.1, 50.0, "Risk 0.1% dan 50% gacha"),
+    }
+
+    if param in limits:
+        min_val, max_val, hint = limits[param]
+        if value < min_val or value > max_val:
+            await message.answer(f"⚠️ {hint}. Qayta kiriting:")
+            return
+
     await state.clear()
 
     settings = await db.get_settings(user["user_id"])

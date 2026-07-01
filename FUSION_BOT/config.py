@@ -12,3 +12,8 @@ MT5_PATH = os.getenv("MT5_PATH", r"C:\Program Files\MetaTrader 5\terminal64.exe"
 
 # Database
 DB_PATH = os.getenv("DB_PATH", "fusion_bot.db")
+
+# Shifrlash kaliti (Fernet) — birinchi marta:
+# python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# natijani .env ga qo'ying
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")

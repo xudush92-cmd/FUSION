@@ -64,16 +64,24 @@ def rsi(close: np.ndarray, period: int = 14) -> np.ndarray:
     seed = deltas[:period]
     up = seed[seed > 0].sum() / period
     down = -seed[seed < 0].sum() / period
-    rs = up / down if down != 0 else 0.0
-    out[period] = 100 - 100 / (1 + rs) if down != 0 else 100.0
+
+    def _rsi_val(u, d):
+        # Harakat yo'q (tekis bozor) — neytral 50, noto'g'ri signal bermaydi
+        if u == 0 and d == 0:
+            return 50.0
+        if d == 0:
+            return 100.0
+        rs = u / d
+        return 100 - 100 / (1 + rs)
+
+    out[period] = _rsi_val(up, down)
     for i in range(period + 1, n):
         delta = deltas[i - 1]
         upval = max(delta, 0.0)
         downval = -min(delta, 0.0)
         up = (up * (period - 1) + upval) / period
         down = (down * (period - 1) + downval) / period
-        rs = up / down if down != 0 else 0.0
-        out[i] = 100 - 100 / (1 + rs) if down != 0 else 100.0
+        out[i] = _rsi_val(up, down)
     return out
 
 

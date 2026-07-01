@@ -2,6 +2,9 @@
 FUSION Bot — konfiguratsiya
 """
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Telegram Bot
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")

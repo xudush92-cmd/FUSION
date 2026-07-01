@@ -342,6 +342,43 @@ def _open_trade(symbol: str, direction: str, lot: float, sl_pts: int, tp_pts: in
 #   Qaytaradi: foydalanuvchiga yuboriladigan xabarlar ro'yxati.
 # ==================================================================
 
+def _resolve_symbol(requested: str) -> str | None:
+    """
+    So'ralgan symbol nomini brokerdagi haqiqiy nomga moslashtirish.
+    Masalan XAUUSD -> XAUUSDm / XAUUSD.r / XAUUSDz (broker suffikslari).
+    """
+    if not requested:
+        return None
+    req = requested.upper()
+
+    # 1) Aniq mos kelsa
+    info = mt5.symbol_info(requested)
+    if info is not None:
+        mt5.symbol_select(requested, True)
+        return requested
+
+    all_syms = mt5.symbols_get()
+    if not all_syms:
+        return None
+
+    # 2) Katta-kichik harfsiz aniq moslik
+    for s in all_syms:
+        if s.name.upper() == req:
+            mt5.symbol_select(s.name, True)
+            return s.name
+    # 3) Boshi mos (suffiksli: XAUUSDm, XAUUSD.r ...)
+    for s in all_syms:
+        if s.name.upper().startswith(req):
+            mt5.symbol_select(s.name, True)
+            return s.name
+    # 4) Ichida mavjud
+    for s in all_syms:
+        if req in s.name.upper():
+            mt5.symbol_select(s.name, True)
+            return s.name
+    return None
+
+
 def trade_once_for_user(user: dict, settings: dict) -> list:
     events = []
     login = user.get("mt5_login")
@@ -355,12 +392,13 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
         logger.warning(f"User {user['user_id']}: MT5 ulanish xatosi: {err}")
         return events
 
-    symbol = settings.get("symbol") or "EURUSD"
+    requested = settings.get("symbol") or "EURUSD"
     tf = TF_MAP.get(settings.get("timeframe", "M5"), mt5.TIMEFRAME_M5)
     strategy = user.get("strategy", "RSI_REVERSAL")
 
-    if not mt5.symbol_select(symbol, True):
-        logger.warning(f"User {user['user_id']}: symbol topilmadi: {symbol}")
+    symbol = _resolve_symbol(requested)
+    if symbol is None:
+        logger.warning(f"User {user['user_id']}: symbol topilmadi: {requested}")
         return events
 
     rates = mt5.copy_rates_from_pos(symbol, tf, 0, 500)

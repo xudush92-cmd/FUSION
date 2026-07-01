@@ -13,8 +13,9 @@ from aiogram.fsm.state import State, StatesGroup
 from config import BOT_TOKEN, ADMIN_IDS
 import database as db
 import mt5_bridge
+import ea_bridge
 from keyboards import (
-    admin_menu_kb, user_menu_kb, strategy_kb, settings_kb, confirm_kb, timeframe_kb
+    admin_menu_kb, user_menu_kb, strategy_kb, settings_kb, timeframe_kb
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -44,6 +45,33 @@ class SettingsStates(StatesGroup):
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
+
+
+async def get_active_user(user_id: int) -> dict | None:
+    """Foydalanuvchini olish — faqat faol (active) bo'lsa qaytaradi.
+    Admin har doim ruxsatga ega."""
+    user = await db.get_user(user_id)
+    if not user:
+        return None
+    if is_admin(user_id):
+        return user
+    if user.get("status") != "active":
+        return None
+    return user
+
+
+async def sync_user_to_ea(user: dict) -> None:
+    """Foydalanuvchi sozlamalarini EA buyruq fayliga yozish (fayl bridge)."""
+    if not user or not user.get("mt5_login"):
+        return
+    settings = await db.get_settings(user["user_id"])
+    running = bool(user.get("robot_running"))
+    ok, err = await asyncio.to_thread(
+        ea_bridge.write_command,
+        user["mt5_login"], running, user.get("strategy", "RSI_REVERSAL"), settings
+    )
+    if not ok:
+        logger.warning(f"EA sinxronlash xatosi (user {user['user_id']}): {err}")
 
 
 # noop — bo'sh callback (ajratuvchi chiziq uchun)
@@ -187,7 +215,7 @@ async def admin_add_mt5_password(message: Message, state: FSMContext):
     await db.set_mt5_credentials(new_uid, mt5_login, mt5_server, password)
 
     # Ulanishni tekshirish
-    connected, error_msg = mt5_bridge.check_connection(mt5_login, mt5_server, password)
+    connected, error_msg = await mt5_bridge.async_check_connection(mt5_login, mt5_server, password)
 
     if connected:
         await message.answer(
@@ -239,8 +267,13 @@ async def admin_remove_user_confirm(message: Message, state: FSMContext):
         await message.answer("❌ Noto'g'ri ID:")
         return
     await state.clear()
+    # O'chirishdan oldin MT5 login ni olamiz (bridge faylini tozalash uchun)
+    target = await db.get_user(uid)
+    target_login = target.get("mt5_login") if target else 0
     removed = await db.remove_user(uid)
     if removed:
+        if target_login:
+            await asyncio.to_thread(ea_bridge.clear_command, target_login)
         await message.answer(f"✅ Foydalanuvchi {uid} o'chirildi.", reply_markup=admin_menu_kb())
     else:
         await message.answer(f"⚠️ {uid} topilmadi.", reply_markup=admin_menu_kb())
@@ -258,7 +291,7 @@ async def admin_status_all(callback: CallbackQuery):
     text = "📊 Umumiy holat:\n\n"
     for u in users:
         if u["mt5_login"]:
-            info, error_msg = mt5_bridge.get_account_info(u["mt5_login"], u["mt5_server"], u["mt5_password"])
+            info, error_msg = await mt5_bridge.async_get_account_info(u["mt5_login"], u["mt5_server"], u["mt5_password"])
             if info:
                 text += (
                     f"👤 {u['user_id']} | {info['name']}\n"
@@ -281,8 +314,10 @@ async def admin_stop_all(callback: CallbackQuery):
     errors = []
     for u in users:
         if u["mt5_login"] and u["robot_running"]:
-            closed, error_msg = mt5_bridge.close_all_positions(u["mt5_login"], u["mt5_server"], u["mt5_password"])
+            closed, error_msg = await mt5_bridge.async_close_all_positions(u["mt5_login"], u["mt5_server"], u["mt5_password"])
             await db.set_robot_state(u["user_id"], False)
+            u["robot_running"] = 0
+            await sync_user_to_ea(u)
             count += 1
             if error_msg:
                 errors.append(f"{u['user_id']}: {error_msg}")
@@ -300,7 +335,7 @@ async def admin_stop_all(callback: CallbackQuery):
 
 @router.callback_query(F.data == "user:menu")
 async def user_menu(callback: CallbackQuery):
-    user = await db.get_user(callback.from_user.id)
+    user = await get_active_user(callback.from_user.id)
     if not user:
         await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
         return
@@ -315,7 +350,7 @@ async def user_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data == "user:start")
 async def user_start_robot(callback: CallbackQuery):
-    user = await db.get_user(callback.from_user.id)
+    user = await get_active_user(callback.from_user.id)
     if not user:
         await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
         return
@@ -324,7 +359,7 @@ async def user_start_robot(callback: CallbackQuery):
         return
 
     # MT5 ulanishni tekshirish
-    connected, error_msg = mt5_bridge.check_connection(
+    connected, error_msg = await mt5_bridge.async_check_connection(
         user["mt5_login"], user["mt5_server"], user["mt5_password"]
     )
     if not connected:
@@ -338,6 +373,8 @@ async def user_start_robot(callback: CallbackQuery):
         return
 
     await db.set_robot_state(user["user_id"], True)
+    user["robot_running"] = 1
+    await sync_user_to_ea(user)
     await callback.message.edit_text(
         "▶️ Robot ishga tushirildi!\n\n"
         f"Strategiya: {user['strategy']}\n"
@@ -349,14 +386,16 @@ async def user_start_robot(callback: CallbackQuery):
 
 @router.callback_query(F.data == "user:stop")
 async def user_stop_robot(callback: CallbackQuery):
-    user = await db.get_user(callback.from_user.id)
+    user = await get_active_user(callback.from_user.id)
     if not user:
         await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
         return
     await db.set_robot_state(user["user_id"], False)
+    user["robot_running"] = 0
+    await sync_user_to_ea(user)
     # Ochiq pozitsiyalarni yopish
     if user["mt5_login"]:
-        closed, error_msg = mt5_bridge.close_all_positions(
+        closed, error_msg = await mt5_bridge.async_close_all_positions(
             user["mt5_login"], user["mt5_server"], user["mt5_password"]
         )
         if error_msg:
@@ -379,12 +418,12 @@ async def user_stop_robot(callback: CallbackQuery):
 
 @router.callback_query(F.data == "user:status")
 async def user_status(callback: CallbackQuery):
-    user = await db.get_user(callback.from_user.id)
+    user = await get_active_user(callback.from_user.id)
     if not user or not user["mt5_login"]:
         await callback.answer("MT5 sozlanmagan", show_alert=True)
         return
 
-    positions, error_msg = mt5_bridge.get_positions(
+    positions, error_msg = await mt5_bridge.async_get_positions(
         user["mt5_login"], user["mt5_server"], user["mt5_password"]
     )
 
@@ -414,12 +453,12 @@ async def user_status(callback: CallbackQuery):
 
 @router.callback_query(F.data == "user:balance")
 async def user_balance(callback: CallbackQuery):
-    user = await db.get_user(callback.from_user.id)
+    user = await get_active_user(callback.from_user.id)
     if not user or not user["mt5_login"]:
         await callback.answer("MT5 sozlanmagan", show_alert=True)
         return
 
-    info, error_msg = mt5_bridge.get_account_info(
+    info, error_msg = await mt5_bridge.async_get_account_info(
         user["mt5_login"], user["mt5_server"], user["mt5_password"]
     )
 
@@ -453,7 +492,7 @@ async def user_balance(callback: CallbackQuery):
 
 @router.callback_query(F.data == "user:strategy")
 async def user_strategy_menu(callback: CallbackQuery):
-    user = await db.get_user(callback.from_user.id)
+    user = await get_active_user(callback.from_user.id)
     if not user:
         await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
         return
@@ -467,12 +506,14 @@ async def user_strategy_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("strat:"))
 async def user_select_strategy(callback: CallbackQuery):
-    user = await db.get_user(callback.from_user.id)
+    user = await get_active_user(callback.from_user.id)
     if not user:
         await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
         return
     strategy = callback.data.split(":")[1]
     await db.set_strategy(user["user_id"], strategy)
+    user["strategy"] = strategy
+    await sync_user_to_ea(user)
     name = mt5_bridge.STRATEGIES.get(strategy, strategy)
     await callback.message.edit_text(
         f"✅ Strategiya o'zgartirildi!\n\n"
@@ -486,7 +527,7 @@ async def user_select_strategy(callback: CallbackQuery):
 
 @router.callback_query(F.data == "user:settings")
 async def user_settings_menu(callback: CallbackQuery):
-    user = await db.get_user(callback.from_user.id)
+    user = await get_active_user(callback.from_user.id)
     if not user:
         await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
         return
@@ -505,7 +546,7 @@ async def user_settings_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data == "user:timeframe")
 async def user_timeframe_menu(callback: CallbackQuery):
-    user = await db.get_user(callback.from_user.id)
+    user = await get_active_user(callback.from_user.id)
     if not user:
         await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
         return
@@ -520,7 +561,7 @@ async def user_timeframe_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("tf:"))
 async def user_select_timeframe(callback: CallbackQuery):
-    user = await db.get_user(callback.from_user.id)
+    user = await get_active_user(callback.from_user.id)
     if not user:
         await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
         return
@@ -528,6 +569,7 @@ async def user_select_timeframe(callback: CallbackQuery):
     settings = await db.get_settings(user["user_id"])
     settings["timeframe"] = tf
     await db.set_settings(user["user_id"], settings)
+    await sync_user_to_ea(user)
     await callback.message.edit_text(
         f"✅ Timeframe o'zgartirildi: {tf}",
         reply_markup=settings_kb()
@@ -537,7 +579,7 @@ async def user_select_timeframe(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("set:"))
 async def user_change_setting(callback: CallbackQuery, state: FSMContext):
-    user = await db.get_user(callback.from_user.id)
+    user = await get_active_user(callback.from_user.id)
     if not user:
         await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
         return
@@ -556,7 +598,7 @@ async def user_change_setting(callback: CallbackQuery, state: FSMContext):
 
 @router.message(SettingsStates.waiting_value)
 async def user_set_value(message: Message, state: FSMContext):
-    user = await db.get_user(message.from_user.id)
+    user = await get_active_user(message.from_user.id)
     if not user:
         return
     try:
@@ -587,6 +629,7 @@ async def user_set_value(message: Message, state: FSMContext):
     settings = await db.get_settings(user["user_id"])
     settings[param] = value
     await db.set_settings(user["user_id"], settings)
+    await sync_user_to_ea(user)
 
     labels = {"lot": "💎 Lot", "sl": "🛑 Stop Loss", "tp": "🎯 Take Profit", "risk": "⚖️ Risk"}
     await message.answer(

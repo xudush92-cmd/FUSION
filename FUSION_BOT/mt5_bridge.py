@@ -2,13 +2,21 @@
 FUSION Bot — MetaTrader 5 bilan bog'lanish (Python API)
 Bu modul MT5 ga ulanadi, savdo ochadi/yopadi, holat ko'rsatadi.
 Ulanish cache qilinadi — har safar qayta login qilinmaydi.
+
+MUHIM: MT5 Python API bir vaqtda faqat bitta hisobga ulanadi.
+Shuning uchun barcha operatsiyalar bitta lock orqali navbatga qo'yiladi
+(bir foydalanuvchi operatsiyasi tugamaguncha boshqasi kutadi).
 """
+import asyncio
 import logging
 import time
 import MetaTrader5 as mt5
 from config import MT5_PATH
 
 logger = logging.getLogger("MT5_BRIDGE")
+
+# Barcha MT5 operatsiyalarini navbatga qo'yuvchi lock (bitta terminal cheklovi uchun)
+_mt5_lock = asyncio.Lock()
 
 # Tayyor strategiyalar nomi va tavsifi
 STRATEGIES = {
@@ -241,3 +249,30 @@ def check_connection(login: int, server: str, password: str) -> tuple[bool, str]
     Qaytaradi: (muvaffaqiyat, xato_xabari)
     """
     return login_account(login, server, password)
+
+
+# ==================================================================
+#   ASYNC WRAPPERLAR — event loop ni bloklamaslik uchun
+#   Bu funksiyalar sinxron MT5 chaqiruvlarini alohida thread da
+#   ishga tushiradi va lock orqali navbatga qo'yadi.
+#   Bot handlerlari SHU async versiyalarni ishlatishi kerak.
+# ==================================================================
+
+async def async_check_connection(login: int, server: str, password: str) -> tuple[bool, str]:
+    async with _mt5_lock:
+        return await asyncio.to_thread(check_connection, login, server, password)
+
+
+async def async_get_account_info(login: int, server: str, password: str) -> tuple[dict | None, str]:
+    async with _mt5_lock:
+        return await asyncio.to_thread(get_account_info, login, server, password)
+
+
+async def async_get_positions(login: int, server: str, password: str) -> tuple[list, str]:
+    async with _mt5_lock:
+        return await asyncio.to_thread(get_positions, login, server, password)
+
+
+async def async_close_all_positions(login: int, server: str, password: str) -> tuple[int, str]:
+    async with _mt5_lock:
+        return await asyncio.to_thread(close_all_positions, login, server, password)

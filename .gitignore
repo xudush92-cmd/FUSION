@@ -10,3 +10,9 @@
 # OS fayllari
 .DS_Store
 Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.env
+fusion_bot.db

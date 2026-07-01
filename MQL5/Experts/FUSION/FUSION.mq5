@@ -113,6 +113,10 @@ input group "=== 0. STRATEGIYA REJIMI ==="
 input ENUM_STRATMODE InpStrategyMode = STRAT_PRESET; // Rejim: PRESET (tayyor) yoki CUSTOM (o'zi quradi)
 input ENUM_PRESET    InpPreset       = PRESET_RSI_REVERSAL; // Tayyor strategiya (faqat PRESET rejimida)
 
+input group "=== BOT BOSHQARUVI (Telegram) ==="
+input bool   InpUseBotControl = false; // Telegram bot fayl orqali boshqarsin (Common\Files\FUSION_<login>.txt)
+input int    InpBotPollSec    = 5;     // Fayl tekshirish oralig'i (soniya)
+
 input group "--- Preset: RSI Reversal ---"
 input int    InpPR_RSI_Period = 14;  // RSI davri
 input double InpPR_RSI_Buy    = 30;  // BUY darajasi (RSI shundan past)
@@ -312,6 +316,25 @@ double          g_dayStartEquity; // kun boshidagi equity
 int             g_dayStartDOY;    // kun raqami (yil ichida)
 bool            g_tradingHalted;  // limit oshganda to'xtatish
 
+//--- Bot boshqaruvi (fayl bridge) override qiymatlari ---
+bool            g_botEnabled = true;   // bot ruxsat berganmi (savdo ochish)
+double          g_ovLot;               // lot (bot yoki input)
+int             g_ovSL;                // stop loss punkt
+int             g_ovTP;                // take profit punkt
+double          g_ovRisk;              // risk foizi
+ENUM_PRESET     g_ovPreset;            // faol preset
+ENUM_TIMEFRAMES g_ovTF;                // faol timeframe
+
+//--- Indikator handle cache (samaradorlik uchun) ---
+struct IndHandle
+{
+   int             itype;   // normalizatsiyalangan indikator turi
+   int             period;  // davr
+   long            tf;      // timeframe
+   int             handle;  // indikator handle
+};
+IndHandle g_hcache[];
+
 //==================================================================
 //                    SHART STRUKTURASI
 //==================================================================
@@ -390,11 +413,143 @@ int OnInit()
    g_tradingHalted  = false;
    g_lastBarTime    = 0;
 
+   // Bot override qiymatlarini input'lardan boshlang'ich holatga keltirish
+   g_ovLot    = InpFixedLot;
+   g_ovSL     = InpStopLossPoints;
+   g_ovTP     = InpTakeProfitPoints;
+   g_ovRisk   = InpRiskPercent;
+   g_ovPreset = InpPreset;
+   g_ovTF     = g_tf;
+   g_botEnabled = true;
+
+   // Bot boshqaruvi yoqilgan bo'lsa — faylni o'qish va timer o'rnatish
+   if(InpUseBotControl)
+   {
+      ReadBridgeFile();
+      int poll = (InpBotPollSec < 1) ? 1 : InpBotPollSec;
+      EventSetTimer(poll);
+      Print("FUSION: Bot boshqaruvi YOQILGAN (fayl bridge)");
+   }
+
    Print("FUSION EA ishga tushdi. Symbol=", _Symbol, " TF=", EnumToString(g_tf));
    return(INIT_SUCCEEDED);
 }
 
-void OnDeinit(const int reason) { }
+void OnDeinit(const int reason)
+{
+   if(InpUseBotControl)
+      EventKillTimer();
+   ClearHandleCache();
+}
+
+//==================================================================
+//        BOT BOSHQARUVI: fayl bridge (Common\Files)
+//==================================================================
+void OnTimer()
+{
+   if(InpUseBotControl)
+      ReadBridgeFile();
+}
+
+// Strategiya nomini (bot yuboradigan) ENUM_PRESET ga aylantirish
+bool StrategyToPreset(string s, ENUM_PRESET &out)
+{
+   if(s=="RSI_REVERSAL")     { out=PRESET_RSI_REVERSAL;     return(true); }
+   if(s=="MA_CROSSOVER")     { out=PRESET_MA_CROSSOVER;     return(true); }
+   if(s=="MACD_CROSS")       { out=PRESET_MACD_CROSS;       return(true); }
+   if(s=="BOLLINGER_BOUNCE") { out=PRESET_BOLLINGER_BOUNCE; return(true); }
+   if(s=="STOCHASTIC")       { out=PRESET_STOCHASTIC;       return(true); }
+   if(s=="CCI")              { out=PRESET_CCI;              return(true); }
+   if(s=="TREND_FOLLOWING")  { out=PRESET_TREND_FOLLOWING;  return(true); }
+   if(s=="SCALP_RSI")        { out=PRESET_SCALP_RSI;        return(true); }
+   if(s=="SCALP_MA")         { out=PRESET_SCALP_MA;         return(true); }
+   if(s=="SCALP_STOCH")      { out=PRESET_SCALP_STOCH;      return(true); }
+   return(false);
+}
+
+// Timeframe matnini (M1, M5, H1...) ENUM_TIMEFRAMES ga aylantirish
+bool TFStringToEnum(string s, ENUM_TIMEFRAMES &out)
+{
+   if(s=="M1")  { out=PERIOD_M1;  return(true); }
+   if(s=="M5")  { out=PERIOD_M5;  return(true); }
+   if(s=="M15") { out=PERIOD_M15; return(true); }
+   if(s=="M30") { out=PERIOD_M30; return(true); }
+   if(s=="H1")  { out=PERIOD_H1;  return(true); }
+   if(s=="H4")  { out=PERIOD_H4;  return(true); }
+   if(s=="D1")  { out=PERIOD_D1;  return(true); }
+   if(s=="W1")  { out=PERIOD_W1;  return(true); }
+   return(false);
+}
+
+// Bot buyruq faylini o'qish: Common\Files\FUSION_<login>.txt
+void ReadBridgeFile()
+{
+   long login = AccountInfoInteger(ACCOUNT_LOGIN);
+   string fname = StringFormat("FUSION_%I64d.txt", login);
+
+   int h = FileOpen(fname, FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   if(h==INVALID_HANDLE)
+      return; // fayl hali yo'q — input sozlamalari bilan ishlaydi
+
+   string strategy = "";
+   string tfStr    = "";
+   bool   enabled  = g_botEnabled;
+   double lot=g_ovLot; int sl=g_ovSL; int tp=g_ovTP; double risk=g_ovRisk;
+
+   while(!FileIsEnding(h))
+   {
+      string line = FileReadString(h);
+      StringTrimLeft(line);
+      StringTrimRight(line);
+      int pos = StringFind(line, "=");
+      if(pos<=0) continue;
+      string key = StringSubstr(line, 0, pos);
+      string val = StringSubstr(line, pos+1);
+
+      if(key=="enabled")        enabled = (StringToInteger(val)==1);
+      else if(key=="strategy")  strategy = val;
+      else if(key=="timeframe") tfStr = val;
+      else if(key=="lot")       lot = StringToDouble(val);
+      else if(key=="sl")        sl = (int)StringToInteger(val);
+      else if(key=="tp")        tp = (int)StringToInteger(val);
+      else if(key=="risk")      risk = StringToDouble(val);
+   }
+   FileClose(h);
+
+   // Qiymatlarni qo'llash
+   g_botEnabled = enabled;
+   if(lot>0)  g_ovLot  = lot;
+   if(sl>=0)  g_ovSL   = sl;
+   if(tp>=0)  g_ovTP   = tp;
+   if(risk>0) g_ovRisk = risk;
+
+   // Strategiya o'zgargan bo'lsa — qayta qurish
+   ENUM_PRESET p;
+   if(strategy!="" && StrategyToPreset(strategy, p))
+   {
+      if(p!=g_ovPreset)
+      {
+         g_ovPreset = p;
+         ClearConditions();
+         BuildPreset(g_ovPreset);
+         Print("FUSION (bot): strategiya o'zgardi -> ", strategy);
+      }
+   }
+
+   // Timeframe o'zgargan bo'lsa
+   ENUM_TIMEFRAMES tf;
+   if(tfStr!="" && TFStringToEnum(tfStr, tf))
+   {
+      if(tf!=g_tf)
+      {
+         g_tf = tf;
+         g_ovTF = tf;
+         g_lastBarTime = 0;
+         ClearHandleCache(); // eski timeframe handle'lari kerak emas
+         Print("FUSION (bot): timeframe o'zgardi -> ", tfStr);
+      }
+   }
+}
 
 //==================================================================
 //                  Shartni strukturaga yuklash
@@ -515,6 +670,10 @@ void OnTick()
    // Ochiq pozitsiyalarni boshqarish (har tickda)
    ManageOpenPositions();
 
+   // Bot boshqaruvi: bot to'xtatgan bo'lsa yangi savdo ochilmaydi
+   if(InpUseBotControl && !g_botEnabled)
+      return;
+
    // Faqat yangi bar ochilganda signal tekshiriladi (agar OnePerBar=true)
    datetime curBar = iTime(_Symbol, g_tf, 0);
    bool newBar = (curBar != g_lastBarTime);
@@ -624,45 +783,16 @@ bool GetIndValue(ENUM_IND ind, int period, int shift, double &out)
 {
    out=0;
    if(period<1) period=1;
-   int handle=INVALID_HANDLE;
    double buf[];
 
-   switch(ind)
+   // Narx — handle kerak emas
+   if(ind==IND_PRICE)
    {
-      case IND_PRICE:
-         out = iClose(_Symbol, g_tf, shift);
-         return(out>0);
-
-      case IND_MA:
-         handle = iMA(_Symbol, g_tf, period, 0, MODE_EMA, PRICE_CLOSE);
-         break;
-      case IND_RSI:
-         handle = iRSI(_Symbol, g_tf, period, PRICE_CLOSE);
-         break;
-      case IND_MACD_MAIN:
-      case IND_MACD_SIGNAL:
-         handle = iMACD(_Symbol, g_tf, 12, 26, 9, PRICE_CLOSE);
-         break;
-      case IND_STOCH:
-         handle = iStochastic(_Symbol, g_tf, period, 3, 3, MODE_SMA, STO_LOWHIGH);
-         break;
-      case IND_CCI:
-         handle = iCCI(_Symbol, g_tf, period, PRICE_TYPICAL);
-         break;
-      case IND_ADX:
-         handle = iADX(_Symbol, g_tf, period);
-         break;
-      case IND_ATR:
-         handle = iATR(_Symbol, g_tf, period);
-         break;
-      case IND_BB_UPPER:
-      case IND_BB_LOWER:
-         handle = iBands(_Symbol, g_tf, period, 0, 2.0, PRICE_CLOSE);
-         break;
-      default:
-         return(false);
+      out = iClose(_Symbol, g_tf, shift);
+      return(out>0);
    }
 
+   int handle = GetHandle(ind, period);
    if(handle==INVALID_HANDLE) return(false);
 
    int bufIndex = 0;
@@ -670,14 +800,65 @@ bool GetIndValue(ENUM_IND ind, int period, int shift, double &out)
    if(ind==IND_BB_UPPER)    bufIndex = 1; // upper band
    if(ind==IND_BB_LOWER)    bufIndex = 2; // lower band
 
+   // Handle cache qilinadi — bu yerda RELEASE qilinmaydi
    if(CopyBuffer(handle, bufIndex, shift, 1, buf) < 1)
-   {
-      IndicatorRelease(handle);
       return(false);
-   }
    out = buf[0];
-   IndicatorRelease(handle);
    return(true);
+}
+
+//==================================================================
+//   INDIKATOR HANDLE olish (cache bilan) — qayta yaratmaydi
+//==================================================================
+int GetHandle(ENUM_IND ind, int period)
+{
+   if(period<1) period=1;
+
+   // Normalizatsiya: MACD ikkala liniyasi va BB ikkala chizig'i bitta handle
+   int key = (int)ind;
+   if(ind==IND_MACD_SIGNAL) key = (int)IND_MACD_MAIN;
+   if(ind==IND_BB_LOWER)    key = (int)IND_BB_UPPER;
+
+   // Cache da qidirish
+   for(int i=0; i<ArraySize(g_hcache); i++)
+      if(g_hcache[i].itype==key && g_hcache[i].period==period && g_hcache[i].tf==(long)g_tf)
+         return(g_hcache[i].handle);
+
+   // Topilmadi — yangi yaratish
+   int handle = INVALID_HANDLE;
+   ENUM_IND base = (ENUM_IND)key;
+   switch(base)
+   {
+      case IND_MA:        handle = iMA(_Symbol, g_tf, period, 0, MODE_EMA, PRICE_CLOSE);            break;
+      case IND_RSI:       handle = iRSI(_Symbol, g_tf, period, PRICE_CLOSE);                        break;
+      case IND_MACD_MAIN: handle = iMACD(_Symbol, g_tf, 12, 26, 9, PRICE_CLOSE);                    break;
+      case IND_STOCH:     handle = iStochastic(_Symbol, g_tf, period, 3, 3, MODE_SMA, STO_LOWHIGH); break;
+      case IND_CCI:       handle = iCCI(_Symbol, g_tf, period, PRICE_TYPICAL);                      break;
+      case IND_ADX:       handle = iADX(_Symbol, g_tf, period);                                     break;
+      case IND_ATR:       handle = iATR(_Symbol, g_tf, period);                                     break;
+      case IND_BB_UPPER:  handle = iBands(_Symbol, g_tf, period, 0, 2.0, PRICE_CLOSE);              break;
+      default:            return(INVALID_HANDLE);
+   }
+   if(handle==INVALID_HANDLE) return(INVALID_HANDLE);
+
+   int n = ArraySize(g_hcache);
+   ArrayResize(g_hcache, n+1);
+   g_hcache[n].itype  = key;
+   g_hcache[n].period = period;
+   g_hcache[n].tf     = (long)g_tf;
+   g_hcache[n].handle = handle;
+   return(handle);
+}
+
+//==================================================================
+//   Handle cache ni tozalash (timeframe o'zgarganda / deinit)
+//==================================================================
+void ClearHandleCache()
+{
+   for(int i=0; i<ArraySize(g_hcache); i++)
+      if(g_hcache[i].handle!=INVALID_HANDLE)
+         IndicatorRelease(g_hcache[i].handle);
+   ArrayResize(g_hcache, 0);
 }
 
 //==================================================================
@@ -694,8 +875,8 @@ void OpenTrade(ENUM_ORDER_TYPE type)
    double slPts = 0, tpPts = 0;
    if(InpSLMode==SL_FIXED)
    {
-      slPts = InpStopLossPoints;
-      tpPts = InpTakeProfitPoints;
+      slPts = g_ovSL;
+      tpPts = g_ovTP;
    }
    else if(InpSLMode==SL_ATR)
    {
@@ -707,8 +888,8 @@ void OpenTrade(ENUM_ORDER_TYPE type)
       }
       else
       {
-         slPts = InpStopLossPoints; // zaxira
-         tpPts = InpTakeProfitPoints;
+         slPts = g_ovSL; // zaxira
+         tpPts = g_ovTP;
       }
    }
    // SL_OFF: slPts=0 qoladi
@@ -746,12 +927,12 @@ void OpenTrade(ENUM_ORDER_TYPE type)
 //==================================================================
 double CalcLot(double slPts)
 {
-   double lot = InpFixedLot;
+   double lot = g_ovLot;
 
    if(InpLotMode==LOT_RISK_PERCENT && slPts>0)
    {
       double balance   = AccountInfoDouble(ACCOUNT_BALANCE);
-      double riskMoney = balance * InpRiskPercent / 100.0;
+      double riskMoney = balance * g_ovRisk / 100.0;
       double tickVal   = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
       double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
       double point     = symInfo.Point();

@@ -46,6 +46,12 @@ def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
 
+# noop — bo'sh callback (ajratuvchi chiziq uchun)
+@router.callback_query(F.data == "noop")
+async def noop_handler(callback: CallbackQuery):
+    await callback.answer()
+
+
 # === /start BUYRUQ ===
 
 @router.message(Command("start"))
@@ -53,10 +59,18 @@ async def cmd_start(message: Message):
     user_id = message.from_user.id
 
     if is_admin(user_id):
+        user = await db.get_user(user_id)
+        robot_status = ""
+        if user and user.get("mt5_login"):
+            robot_status = (
+                f"\n📊 Strategiya: {user['strategy']}\n"
+                f"🤖 Robot: {'🟢 Ishlayapti' if user['robot_running'] else '🔴 Toxtatilgan'}\n"
+            )
         await message.answer(
             "🤖 **FUSION Boshqaruv Paneli**\n\n"
             "Siz ADMIN sifatida kirdingiz.\n"
-            "Foydalanuvchilarni boshqaring:",
+            f"{robot_status}\n"
+            "⬇️ Boshqarish:",
             reply_markup=admin_menu_kb(),
             parse_mode="Markdown"
         )

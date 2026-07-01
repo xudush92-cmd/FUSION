@@ -6,8 +6,19 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 # === ADMIN PANEL ===
 
 def admin_menu_kb() -> InlineKeyboardMarkup:
-    """Admin bosh menyu"""
+    """Admin bosh menyu — admin + foydalanuvchi tugmalari"""
     return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="▶️ START", callback_data="user:start"),
+            InlineKeyboardButton(text="⏹ STOP", callback_data="user:stop"),
+        ],
+        [
+            InlineKeyboardButton(text="📊 Holat", callback_data="user:status"),
+            InlineKeyboardButton(text="💰 Balans", callback_data="user:balance"),
+        ],
+        [InlineKeyboardButton(text="🔄 Strategiya tanlash", callback_data="user:strategy")],
+        [InlineKeyboardButton(text="⚙️ Sozlamalar", callback_data="user:settings")],
+        [InlineKeyboardButton(text="━━━━ ADMIN ━━━━", callback_data="noop")],
         [InlineKeyboardButton(text="👥 Foydalanuvchilar", callback_data="admin:users")],
         [InlineKeyboardButton(text="➕ Yangi hisob qo'shish", callback_data="admin:add_user")],
         [InlineKeyboardButton(text="❌ Hisob olib tashlash", callback_data="admin:remove_user")],

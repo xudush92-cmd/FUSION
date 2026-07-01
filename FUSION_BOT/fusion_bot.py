@@ -14,6 +14,7 @@ from config import BOT_TOKEN, ADMIN_IDS
 import database as db
 import mt5_bridge
 import ea_bridge
+import trader
 from keyboards import (
     admin_menu_kb, user_menu_kb, strategy_kb, settings_kb, timeframe_kb, symbol_kb
 )
@@ -677,6 +678,45 @@ async def user_set_value(message: Message, state: FSMContext):
 
 
 # ============================================================
+#                    SAVDO TSIKLI (background)
+# ============================================================
+
+# Savdo tsikli oralig'i (soniya) — har necha soniyada bozor tekshiriladi
+TRADING_POLL_SEC = 15
+
+
+async def trading_loop():
+    """
+    Doimiy savdo tsikli. Faol (robot_running) foydalanuvchilar uchun
+    navbat bilan bozorni tekshiradi va savdo ochadi.
+    """
+    logger.info("Savdo tsikli ishga tushdi")
+    while True:
+        try:
+            users = await db.get_all_users()
+            for u in users:
+                if not u.get("robot_running") or not u.get("mt5_login"):
+                    continue
+                settings = await db.get_settings(u["user_id"])
+                # MT5 operatsiyalari lock ostida, alohida thread da
+                try:
+                    async with mt5_bridge._mt5_lock:
+                        events = await asyncio.to_thread(trader.trade_once_for_user, u, settings)
+                except Exception as e:
+                    logger.error(f"Savdo tsikli xatosi (user {u['user_id']}): {e}")
+                    events = []
+                # Foydalanuvchiga xabar yuborish
+                for msg in events:
+                    try:
+                        await bot.send_message(u["user_id"], msg)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"Savdo tsikli umumiy xatosi: {e}")
+        await asyncio.sleep(TRADING_POLL_SEC)
+
+
+# ============================================================
 #                           MAIN
 # ============================================================
 
@@ -688,6 +728,10 @@ async def main():
         await db.add_user(admin_id, role="admin")
 
     dp.include_router(router)
+
+    # Savdo tsiklini fon rejimida ishga tushirish
+    asyncio.create_task(trading_loop())
+
     logger.info("FUSION Bot ishga tushdi...")
     await dp.start_polling(bot)
 

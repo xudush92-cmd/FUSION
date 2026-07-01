@@ -331,9 +331,25 @@ def _open_trade(symbol: str, direction: str, lot: float, sl_pts: int, tp_pts: in
         if result.retcode == 10030:
             last_err = "filling mode qo'llab-quvvatlanmaydi"
             continue
-        last_err = f"retcode {result.retcode}"
+        last_err = _retcode_message(result.retcode)
         break
     return False, last_err
+
+
+def _retcode_message(code: int) -> str:
+    """MT5 retcode ni tushunarli xabarga aylantirish"""
+    messages = {
+        10027: "AutoTrading o'chirilgan! MT5 terminalida 'Algo Trading' tugmasini yoqing.",
+        10018: "Bozor yopiq (dam olish kuni yoki savdo vaqti emas).",
+        10019: "Mablag' yetarli emas (balans/margin).",
+        10016: "Noto'g'ri SL/TP darajasi (juda yaqin).",
+        10014: "Noto'g'ri lot hajmi.",
+        10006: "So'rov rad etildi (broker).",
+        10004: "Rekvota (narx o'zgardi) — qayta urinadi.",
+        10013: "Noto'g'ri so'rov.",
+        10015: "Noto'g'ri narx.",
+    }
+    return messages.get(code, f"retcode {code}")
 
 
 # ==================================================================

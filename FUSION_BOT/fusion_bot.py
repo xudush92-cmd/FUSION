@@ -66,7 +66,7 @@ async def cmd_start(message: Message):
             await message.answer(
                 "🤖 **FUSION Robot**\n\n"
                 f"Strategiya: {user['strategy']}\n"
-                f"Robot: {'🟢 Ishlayapti' if user['robot_running'] else '🔴 To\\'xtatilgan'}\n\n"
+                f"Robot: {'🟢 Ishlayapti' if user['robot_running'] else '🔴 Toxtatilgan'}\n\n"
                 "Boshqarish:",
                 reply_markup=user_menu_kb(),
                 parse_mode="Markdown"
@@ -294,7 +294,7 @@ async def user_menu(callback: CallbackQuery):
     await callback.message.edit_text(
         f"🤖 **FUSION Robot**\n\n"
         f"Strategiya: {user['strategy']}\n"
-        f"Robot: {'🟢 Ishlayapti' if user['robot_running'] else '🔴 To\\'xtatilgan'}",
+        f"Robot: {'🟢 Ishlayapti' if user['robot_running'] else '🔴 Toxtatilgan'}",
         reply_markup=user_menu_kb(), parse_mode="Markdown"
     )
     await callback.answer()

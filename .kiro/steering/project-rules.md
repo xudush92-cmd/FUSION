@@ -100,9 +100,23 @@ FUSION/
 
 ---
 
+## Kiro uchun MUHIM QOIDALAR (ruxsatlar)
+
+> **BU QOIDALAR HECH QACHON BUZILMASIN!**
+
+1. **Ruxsatsiz kod yozma** — foydalanuvchi aniq buyurmasa, hech qanday fayl yaratma, o'zgartirma yoki o'chirma
+2. **Yangi PR yaratma** — mavjud PR bor bo'lsa, o'sha PR dagi branch'ga push qil. Yangi PR faqat foydalanuvchi aniq "yangi PR och" desa yaratilsin
+3. **Avval so'ra, keyin qil** — tuzatish/o'zgartirish kerak bo'lsa, avval foydalanuvchiga rejani ko'rsat va ruxsat so'ra
+4. **O'z boshimchalik qilma** — foydalanuvchi nimani so'rasa, faqat shuni qil. Qo'shimcha "yaxshilash" qilma
+5. **Mavjud kodni buzma** — o'zgartirish kiritishdan oldin, mavjud kodni sinchiklab o'qi va nima o'zgarishini tushuntir
+
+---
+
 ## Git qoidalari
 
 - Branch nomlari: `feature/...`, `fix/...`, `refactor/...`
 - Commit xabarlari o'zbek tilida, qisqa va aniq
 - `main` branch'ga to'g'ridan-to'g'ri push qilinmasin
-- Har bir o'zgarish PR orqali kiritilsin
+- Mavjud ochiq PR bo'lsa — yangi PR yaratmasdan, o'sha branch'ga push qil
+- Yangi PR faqat foydalanuvchi so'raganda yaratilsin
+- Har bir o'zgarishdan oldin foydalanuvchidan ruxsat olinsin

@@ -10,6 +10,7 @@ savdo tsikli har bir foydalanuvchi uchun navbat bilan ishlaydi
 (mt5_bridge._mt5_lock orqali).
 """
 import logging
+import time
 import numpy as np
 import MetaTrader5 as mt5
 
@@ -33,6 +34,10 @@ TF_MAP = {
 
 # Har bir foydalanuvchi uchun oxirgi qayta ishlangan bar (takroriy savdoning oldini olish)
 _last_bar: dict = {}
+
+# Bir xil xato xabarini takror yubormaslik uchun (user_id -> (xabar, vaqt))
+_last_error: dict = {}
+ERROR_REPEAT_SEC = 600  # bir xil xato 10 daqiqada bir marta xabar qilinadi
 
 
 # ==================================================================
@@ -463,8 +468,15 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
     if ok:
         events.append(f"✅ {signal} {symbol} ochildi | lot {lot} | SL {sl_pts} | TP {tp_pts}")
         logger.info(f"User {user['user_id']}: {signal} {symbol} ochildi")
+        _last_error.pop(user["user_id"], None)  # xato holatini tozalash
     else:
-        events.append(f"⚠️ {symbol} {signal} ochilmadi: {err}")
         logger.warning(f"User {user['user_id']}: savdo ochish xatosi: {err}")
+        # Bir xil xatoni takror yubormaslik (spam oldini olish)
+        uid = user["user_id"]
+        prev = _last_error.get(uid)
+        now = time.time()
+        if prev is None or prev[0] != err or (now - prev[1]) >= ERROR_REPEAT_SEC:
+            _last_error[uid] = (err, now)
+            events.append(f"⚠️ {symbol} {signal} ochilmadi: {err}")
 
     return events

@@ -57,6 +57,10 @@ def strategy_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔀 Stochastic", callback_data="strat:STOCHASTIC")],
         [InlineKeyboardButton(text="📐 CCI", callback_data="strat:CCI")],
         [InlineKeyboardButton(text="🚀 Trend Following", callback_data="strat:TREND_FOLLOWING")],
+        [InlineKeyboardButton(text="━━━ SKALPING ━━━", callback_data="noop")],
+        [InlineKeyboardButton(text="⚡ Skalp RSI (M1/M5)", callback_data="strat:SCALP_RSI")],
+        [InlineKeyboardButton(text="⚡ Skalp MA (M1/M5)", callback_data="strat:SCALP_MA")],
+        [InlineKeyboardButton(text="⚡ Skalp Stochastic (M1/M5)", callback_data="strat:SCALP_STOCH")],
         [InlineKeyboardButton(text="🔙 Ortga", callback_data="user:menu")],
     ])
 

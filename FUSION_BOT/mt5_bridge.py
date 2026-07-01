@@ -19,6 +19,9 @@ STRATEGIES = {
     "STOCHASTIC":        "Stochastic (<20 BUY, >80 SELL)",
     "CCI":               "CCI (<-100 BUY, >100 SELL)",
     "TREND_FOLLOWING":   "Trend Following (MA + ADX filtri)",
+    "SCALP_RSI":         "Skalping RSI (M1/M5, RSI<25 BUY, >75 SELL)",
+    "SCALP_MA":          "Skalping MA (M1/M5, tez MA kesishuvi)",
+    "SCALP_STOCH":       "Skalping Stochastic (M1/M5, <15 BUY, >85 SELL)",
 }
 
 

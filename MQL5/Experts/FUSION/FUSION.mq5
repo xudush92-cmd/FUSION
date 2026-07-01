@@ -98,7 +98,10 @@ enum ENUM_PRESET
    PRESET_BOLLINGER_BOUNCE, // Bollinger bounce (chiziqqa tegish)
    PRESET_STOCHASTIC,       // Stochastic (oversold/overbought)
    PRESET_CCI,              // CCI (-100/+100)
-   PRESET_TREND_FOLLOWING   // Trend following (MA yo'nalishi + ADX filtri)
+   PRESET_TREND_FOLLOWING,  // Trend following (MA yo'nalishi + ADX filtri)
+   PRESET_SCALP_RSI,        // Skalping RSI (RSI<25 BUY, >75 SELL)
+   PRESET_SCALP_MA,         // Skalping MA (tez kesishuv)
+   PRESET_SCALP_STOCH       // Skalping Stochastic (<15 BUY, >85 SELL)
 };
 
 //==================================================================
@@ -473,6 +476,24 @@ void BuildPreset(ENUM_PRESET preset)
          LoadCond(g_sell[1], true, IND_ADX,   InpPR_Trend_ADXp, OP_GREATER, CMP_VALUE, InpPR_Trend_ADXm, IND_NONE, 0);
          g_buyLogic  = LOGIC_AND; // ikkala shart ham bajarilsin
          g_sellLogic = LOGIC_AND;
+         break;
+
+      //--- 8) Skalping RSI: RSI<25 BUY, RSI>75 SELL (qisqa davr) ---
+      case PRESET_SCALP_RSI:
+         LoadCond(g_buy[0],  true, IND_RSI, 7, OP_LESS,    CMP_VALUE, 25, IND_NONE, 0);
+         LoadCond(g_sell[0], true, IND_RSI, 7, OP_GREATER, CMP_VALUE, 75, IND_NONE, 0);
+         break;
+
+      //--- 9) Skalping MA: tez MA(5) sekin MA(20) ni kesib o'tsa ---
+      case PRESET_SCALP_MA:
+         LoadCond(g_buy[0],  true, IND_MA, 5, OP_CROSS_ABOVE, CMP_IND, 0, IND_MA, 20);
+         LoadCond(g_sell[0], true, IND_MA, 5, OP_CROSS_BELOW, CMP_IND, 0, IND_MA, 20);
+         break;
+
+      //--- 10) Skalping Stochastic: Stoch<15 BUY, Stoch>85 SELL ---
+      case PRESET_SCALP_STOCH:
+         LoadCond(g_buy[0],  true, IND_STOCH, 5, OP_LESS,    CMP_VALUE, 15, IND_NONE, 0);
+         LoadCond(g_sell[0], true, IND_STOCH, 5, OP_GREATER, CMP_VALUE, 85, IND_NONE, 0);
          break;
    }
 }

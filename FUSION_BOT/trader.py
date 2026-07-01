@@ -290,36 +290,42 @@ def _open_trade(symbol: str, direction: str, lot: float, sl_pts: int, tp_pts: in
     digits = info.digits
     lot = _normalize_lot(info, lot)
 
-    if direction == "BUY":
-        price = tick.ask
-        sl = round(price - sl_pts * point, digits) if sl_pts > 0 else 0.0
-        tp = round(price + tp_pts * point, digits) if tp_pts > 0 else 0.0
-        otype = mt5.ORDER_TYPE_BUY
-    else:
-        price = tick.bid
-        sl = round(price + sl_pts * point, digits) if sl_pts > 0 else 0.0
-        tp = round(price - tp_pts * point, digits) if tp_pts > 0 else 0.0
-        otype = mt5.ORDER_TYPE_SELL
+    # Brokerning minimal stop masofasi (punktda). SL/TP shundan yaqin bo'lolmaydi.
+    stops_level = getattr(info, "trade_stops_level", 0) or 0
+    freeze_level = getattr(info, "trade_freeze_level", 0) or 0
+    min_dist = max(stops_level, freeze_level)
+    # Xavfsizlik buferi: minimal masofadan kamida shuncha uzoq
+    buffer = max(min_dist + 10, 10)
+    if sl_pts > 0 and sl_pts < buffer:
+        sl_pts = buffer
+    if tp_pts > 0 and tp_pts < buffer:
+        tp_pts = buffer
 
+    if direction == "BUY":
+        otype = mt5.ORDER_TYPE_BUY
+        price = tick.ask
+    else:
+        otype = mt5.ORDER_TYPE_SELL
+        price = tick.bid
+
+    # 1-QADAM: Bozor buyrug'ini SL/TP SIZ ochish (10016 xatosining oldini oladi)
     base_req = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
         "volume": lot,
         "type": otype,
         "price": price,
-        "sl": sl,
-        "tp": tp,
         "deviation": 30,
         "magic": MAGIC,
         "comment": "FUSION_BOT",
         "type_time": mt5.ORDER_TIME_GTC,
     }
 
-    # Bir nechta filling turini sinash (broker qo'llab-quvvatlaydiganini topish)
     fillings = [_filling_type(info), mt5.ORDER_FILLING_IOC,
                 mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_RETURN]
     seen = []
     last_err = ""
+    opened = False
     for fill in fillings:
         if fill in seen:
             continue
@@ -331,14 +337,51 @@ def _open_trade(symbol: str, direction: str, lot: float, sl_pts: int, tp_pts: in
             last_err = f"order_send None: {mt5.last_error()}"
             continue
         if result.retcode == mt5.TRADE_RETCODE_DONE:
-            return True, ""
-        # 10030 = qo'llab-quvvatlanmaydigan filling — boshqasini sinaymiz
-        if result.retcode == 10030:
+            opened = True
+            break
+        if result.retcode == 10030:  # filling qo'llab-quvvatlanmaydi
             last_err = "filling mode qo'llab-quvvatlanmaydi"
             continue
         last_err = _retcode_message(result.retcode)
         break
-    return False, last_err
+
+    if not opened:
+        return False, last_err
+
+    # 2-QADAM: Ochilgan pozitsiyaga SL/TP qo'yish (best-effort)
+    if sl_pts > 0 or tp_pts > 0:
+        _apply_sltp(symbol, direction, sl_pts, tp_pts, point, digits)
+
+    return True, ""
+
+
+def _apply_sltp(symbol, direction, sl_pts, tp_pts, point, digits):
+    """Ochilgan pozitsiyaga SL/TP qo'yish (alohida so'rov)."""
+    positions = mt5.positions_get(symbol=symbol) or []
+    mine = [p for p in positions if p.magic == MAGIC]
+    if not mine:
+        return
+    pos = mine[-1]  # eng oxirgi ochilgan
+    open_price = pos.price_open
+    if direction == "BUY":
+        sl = round(open_price - sl_pts * point, digits) if sl_pts > 0 else 0.0
+        tp = round(open_price + tp_pts * point, digits) if tp_pts > 0 else 0.0
+    else:
+        sl = round(open_price + sl_pts * point, digits) if sl_pts > 0 else 0.0
+        tp = round(open_price - tp_pts * point, digits) if tp_pts > 0 else 0.0
+
+    req = {
+        "action": mt5.TRADE_ACTION_SLTP,
+        "symbol": symbol,
+        "position": pos.ticket,
+        "sl": sl,
+        "tp": tp,
+        "magic": MAGIC,
+    }
+    result = mt5.order_send(req)
+    if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+        code = result.retcode if result else "None"
+        logger.warning(f"SL/TP qo'yilmadi (ticket {pos.ticket}): retcode {code}")
 
 
 def _retcode_message(code: int) -> str:

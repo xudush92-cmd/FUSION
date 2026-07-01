@@ -14,7 +14,7 @@ from config import BOT_TOKEN, ADMIN_IDS
 import database as db
 import mt5_bridge
 from keyboards import (
-    admin_menu_kb, user_menu_kb, strategy_kb, settings_kb, confirm_kb
+    admin_menu_kb, user_menu_kb, strategy_kb, settings_kb, confirm_kb, timeframe_kb
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -496,9 +496,42 @@ async def user_settings_menu(callback: CallbackQuery):
         f"💎 Lot: {settings.get('lot', 0.10)}\n"
         f"🛑 Stop Loss: {settings.get('sl', 300)} punkt\n"
         f"🎯 Take Profit: {settings.get('tp', 600)} punkt\n"
-        f"⚖️ Risk: {settings.get('risk', 1.0)}%"
+        f"⚖️ Risk: {settings.get('risk', 1.0)}%\n"
+        f"🕐 Timeframe: {settings.get('timeframe', 'M5')}"
     )
     await callback.message.edit_text(text, reply_markup=settings_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "user:timeframe")
+async def user_timeframe_menu(callback: CallbackQuery):
+    user = await db.get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    settings = await db.get_settings(user["user_id"])
+    current_tf = settings.get("timeframe", "M5")
+    await callback.message.edit_text(
+        f"🕐 Timeframe tanlang:\n\nHozirgi: {current_tf}",
+        reply_markup=timeframe_kb()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("tf:"))
+async def user_select_timeframe(callback: CallbackQuery):
+    user = await db.get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    tf = callback.data.split(":")[1]
+    settings = await db.get_settings(user["user_id"])
+    settings["timeframe"] = tf
+    await db.set_settings(user["user_id"], settings)
+    await callback.message.edit_text(
+        f"✅ Timeframe o'zgartirildi: {tf}",
+        reply_markup=settings_kb()
+    )
     await callback.answer()
 
 

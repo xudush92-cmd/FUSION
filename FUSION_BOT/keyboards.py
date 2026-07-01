@@ -74,11 +74,33 @@ def settings_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🛑 Stop Loss", callback_data="set:sl")],
         [InlineKeyboardButton(text="🎯 Take Profit", callback_data="set:tp")],
         [InlineKeyboardButton(text="⚖️ Risk %", callback_data="set:risk")],
+        [InlineKeyboardButton(text="🕐 Timeframe", callback_data="user:timeframe")],
         [InlineKeyboardButton(text="🔙 Ortga", callback_data="user:menu")],
     ])
 
 
 # === TASDIQLASH ===
+
+def timeframe_kb() -> InlineKeyboardMarkup:
+    """Timeframe tanlash tugmalari"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="M1", callback_data="tf:M1"),
+            InlineKeyboardButton(text="M5", callback_data="tf:M5"),
+            InlineKeyboardButton(text="M15", callback_data="tf:M15"),
+        ],
+        [
+            InlineKeyboardButton(text="M30", callback_data="tf:M30"),
+            InlineKeyboardButton(text="H1", callback_data="tf:H1"),
+            InlineKeyboardButton(text="H4", callback_data="tf:H4"),
+        ],
+        [
+            InlineKeyboardButton(text="D1", callback_data="tf:D1"),
+            InlineKeyboardButton(text="W1", callback_data="tf:W1"),
+        ],
+        [InlineKeyboardButton(text="🔙 Ortga", callback_data="user:settings")],
+    ])
+
 
 def confirm_kb(action: str) -> InlineKeyboardMarkup:
     """Tasdiqlash (Ha/Yo'q)"""

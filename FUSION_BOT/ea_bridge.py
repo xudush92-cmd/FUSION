@@ -42,6 +42,7 @@ def write_command(login: int, running: bool, strategy: str, settings: dict) -> t
     lines = [
         f"enabled={1 if running else 0}",
         f"strategy={strategy}",
+        f"symbol={settings.get('symbol', '')}",
         f"timeframe={settings.get('timeframe', 'M5')}",
         f"lot={settings.get('lot', 0.10)}",
         f"sl={int(settings.get('sl', 300))}",

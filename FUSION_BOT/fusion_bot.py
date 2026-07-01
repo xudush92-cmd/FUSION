@@ -15,7 +15,7 @@ import database as db
 import mt5_bridge
 import ea_bridge
 from keyboards import (
-    admin_menu_kb, user_menu_kb, strategy_kb, settings_kb, timeframe_kb
+    admin_menu_kb, user_menu_kb, strategy_kb, settings_kb, timeframe_kb, symbol_kb
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -534,6 +534,7 @@ async def user_settings_menu(callback: CallbackQuery):
     settings = await db.get_settings(user["user_id"])
     text = (
         "⚙️ Sozlamalar:\n\n"
+        f"💱 Juftlik: {settings.get('symbol', 'grafikdagi')}\n"
         f"💎 Lot: {settings.get('lot', 0.10)}\n"
         f"🛑 Stop Loss: {settings.get('sl', 300)} punkt\n"
         f"🎯 Take Profit: {settings.get('tp', 600)} punkt\n"
@@ -541,6 +542,43 @@ async def user_settings_menu(callback: CallbackQuery):
         f"🕐 Timeframe: {settings.get('timeframe', 'M5')}"
     )
     await callback.message.edit_text(text, reply_markup=settings_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "user:symbol")
+async def user_symbol_menu(callback: CallbackQuery):
+    user = await get_active_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    settings = await db.get_settings(user["user_id"])
+    current = settings.get("symbol", "grafikdagi")
+    await callback.message.edit_text(
+        f"💱 Savdo juftligini tanlang:\n\n"
+        f"Hozirgi: {current}\n\n"
+        f"⚠️ Eslatma: broker nomi farq qilishi mumkin "
+        f"(masalan XAUUSDm, EURUSD.r). Agar savdo ochilmasa, "
+        f"MT5 dagi aniq nomni admin bilan tekshiring.",
+        reply_markup=symbol_kb()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("sym:"))
+async def user_select_symbol(callback: CallbackQuery):
+    user = await get_active_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    symbol = callback.data.split(":")[1]
+    settings = await db.get_settings(user["user_id"])
+    settings["symbol"] = symbol
+    await db.set_settings(user["user_id"], settings)
+    await sync_user_to_ea(user)
+    await callback.message.edit_text(
+        f"✅ Juftlik o'zgartirildi: {symbol}",
+        reply_markup=settings_kb()
+    )
     await callback.answer()
 
 

@@ -70,12 +70,40 @@ def strategy_kb() -> InlineKeyboardMarkup:
 def settings_kb() -> InlineKeyboardMarkup:
     """Sozlamalar tugmalari"""
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💱 Juftlik (Symbol)", callback_data="user:symbol")],
         [InlineKeyboardButton(text="💎 Lot o'zgartirish", callback_data="set:lot")],
         [InlineKeyboardButton(text="🛑 Stop Loss", callback_data="set:sl")],
         [InlineKeyboardButton(text="🎯 Take Profit", callback_data="set:tp")],
         [InlineKeyboardButton(text="⚖️ Risk %", callback_data="set:risk")],
         [InlineKeyboardButton(text="🕐 Timeframe", callback_data="user:timeframe")],
         [InlineKeyboardButton(text="🔙 Ortga", callback_data="user:menu")],
+    ])
+
+
+# === SYMBOL (JUFTLIK) TANLASH ===
+
+def symbol_kb() -> InlineKeyboardMarkup:
+    """Valyuta juftligi / oltin tanlash tugmalari"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🥇 Oltin (XAUUSD)", callback_data="sym:XAUUSD")],
+        [
+            InlineKeyboardButton(text="EUR/USD", callback_data="sym:EURUSD"),
+            InlineKeyboardButton(text="GBP/USD", callback_data="sym:GBPUSD"),
+        ],
+        [
+            InlineKeyboardButton(text="USD/JPY", callback_data="sym:USDJPY"),
+            InlineKeyboardButton(text="USD/CHF", callback_data="sym:USDCHF"),
+        ],
+        [
+            InlineKeyboardButton(text="AUD/USD", callback_data="sym:AUDUSD"),
+            InlineKeyboardButton(text="USD/CAD", callback_data="sym:USDCAD"),
+        ],
+        [
+            InlineKeyboardButton(text="NZD/USD", callback_data="sym:NZDUSD"),
+            InlineKeyboardButton(text="EUR/JPY", callback_data="sym:EURJPY"),
+        ],
+        [InlineKeyboardButton(text="GBP/JPY", callback_data="sym:GBPJPY")],
+        [InlineKeyboardButton(text="🔙 Ortga", callback_data="user:settings")],
     ])
 
 

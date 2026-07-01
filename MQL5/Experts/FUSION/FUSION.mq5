@@ -315,6 +315,7 @@ datetime        g_lastBarTime; // oxirgi qayta ishlangan bar vaqti
 double          g_dayStartEquity; // kun boshidagi equity
 int             g_dayStartDOY;    // kun raqami (yil ichida)
 bool            g_tradingHalted;  // limit oshganda to'xtatish
+string          g_symbol;         // savdo juftligi (grafik yoki bot tanlaydi)
 
 //--- Bot boshqaruvi (fayl bridge) override qiymatlari ---
 bool            g_botEnabled = true;   // bot ruxsat berganmi (savdo ochish)
@@ -364,13 +365,14 @@ int        g_sellVotes;
 //==================================================================
 int OnInit()
 {
+   g_symbol = _Symbol; // standart: grafik juftligi (bot boshqarsa keyin o'zgaradi)
    g_tf = (InpEntryTF == PERIOD_CURRENT) ? (ENUM_TIMEFRAMES)Period() : InpEntryTF;
 
    trade.SetExpertMagicNumber(InpMagic);
    trade.SetDeviationInPoints(InpSlippage);
-   trade.SetTypeFillingBySymbol(_Symbol);
+   trade.SetTypeFillingBySymbol(g_symbol);
 
-   if(!symInfo.Name(_Symbol))
+   if(!symInfo.Name(g_symbol))
    {
       Print("Symbol info xatosi");
       return(INIT_FAILED);
@@ -431,7 +433,7 @@ int OnInit()
       Print("FUSION: Bot boshqaruvi YOQILGAN (fayl bridge)");
    }
 
-   Print("FUSION EA ishga tushdi. Symbol=", _Symbol, " TF=", EnumToString(g_tf));
+   Print("FUSION EA ishga tushdi. Symbol=", g_symbol, " TF=", EnumToString(g_tf));
    return(INIT_SUCCEEDED);
 }
 
@@ -493,6 +495,7 @@ void ReadBridgeFile()
 
    string strategy = "";
    string tfStr    = "";
+   string symStr   = "";
    bool   enabled  = g_botEnabled;
    double lot=g_ovLot; int sl=g_ovSL; int tp=g_ovTP; double risk=g_ovRisk;
 
@@ -508,6 +511,7 @@ void ReadBridgeFile()
 
       if(key=="enabled")        enabled = (StringToInteger(val)==1);
       else if(key=="strategy")  strategy = val;
+      else if(key=="symbol")    symStr = val;
       else if(key=="timeframe") tfStr = val;
       else if(key=="lot")       lot = StringToDouble(val);
       else if(key=="sl")        sl = (int)StringToInteger(val);
@@ -522,6 +526,22 @@ void ReadBridgeFile()
    if(sl>=0)  g_ovSL   = sl;
    if(tp>=0)  g_ovTP   = tp;
    if(risk>0) g_ovRisk = risk;
+
+   // Symbol (juftlik) o'zgargan bo'lsa
+   if(symStr!="" && symStr!=g_symbol)
+   {
+      if(SymbolSelect(symStr, true) && symInfo.Name(symStr))
+      {
+         g_symbol = symStr;
+         g_lastBarTime = 0;
+         ClearHandleCache(); // eski juftlik handle'lari kerak emas
+         Print("FUSION (bot): juftlik o'zgardi -> ", symStr);
+      }
+      else
+      {
+         Print("FUSION (bot): juftlik topilmadi -> ", symStr, " (broker nomini tekshiring)");
+      }
+   }
 
    // Strategiya o'zgargan bo'lsa — qayta qurish
    ENUM_PRESET p;
@@ -675,7 +695,7 @@ void OnTick()
       return;
 
    // Faqat yangi bar ochilganda signal tekshiriladi (agar OnePerBar=true)
-   datetime curBar = iTime(_Symbol, g_tf, 0);
+   datetime curBar = iTime(g_symbol, g_tf, 0);
    bool newBar = (curBar != g_lastBarTime);
    if(InpOnePerBar && !newBar)
       return;
@@ -788,7 +808,7 @@ bool GetIndValue(ENUM_IND ind, int period, int shift, double &out)
    // Narx — handle kerak emas
    if(ind==IND_PRICE)
    {
-      out = iClose(_Symbol, g_tf, shift);
+      out = iClose(g_symbol, g_tf, shift);
       return(out>0);
    }
 
@@ -829,14 +849,14 @@ int GetHandle(ENUM_IND ind, int period)
    ENUM_IND base = (ENUM_IND)key;
    switch(base)
    {
-      case IND_MA:        handle = iMA(_Symbol, g_tf, period, 0, MODE_EMA, PRICE_CLOSE);            break;
-      case IND_RSI:       handle = iRSI(_Symbol, g_tf, period, PRICE_CLOSE);                        break;
-      case IND_MACD_MAIN: handle = iMACD(_Symbol, g_tf, 12, 26, 9, PRICE_CLOSE);                    break;
-      case IND_STOCH:     handle = iStochastic(_Symbol, g_tf, period, 3, 3, MODE_SMA, STO_LOWHIGH); break;
-      case IND_CCI:       handle = iCCI(_Symbol, g_tf, period, PRICE_TYPICAL);                      break;
-      case IND_ADX:       handle = iADX(_Symbol, g_tf, period);                                     break;
-      case IND_ATR:       handle = iATR(_Symbol, g_tf, period);                                     break;
-      case IND_BB_UPPER:  handle = iBands(_Symbol, g_tf, period, 0, 2.0, PRICE_CLOSE);              break;
+      case IND_MA:        handle = iMA(g_symbol, g_tf, period, 0, MODE_EMA, PRICE_CLOSE);            break;
+      case IND_RSI:       handle = iRSI(g_symbol, g_tf, period, PRICE_CLOSE);                        break;
+      case IND_MACD_MAIN: handle = iMACD(g_symbol, g_tf, 12, 26, 9, PRICE_CLOSE);                    break;
+      case IND_STOCH:     handle = iStochastic(g_symbol, g_tf, period, 3, 3, MODE_SMA, STO_LOWHIGH); break;
+      case IND_CCI:       handle = iCCI(g_symbol, g_tf, period, PRICE_TYPICAL);                      break;
+      case IND_ADX:       handle = iADX(g_symbol, g_tf, period);                                     break;
+      case IND_ATR:       handle = iATR(g_symbol, g_tf, period);                                     break;
+      case IND_BB_UPPER:  handle = iBands(g_symbol, g_tf, period, 0, 2.0, PRICE_CLOSE);              break;
       default:            return(INVALID_HANDLE);
    }
    if(handle==INVALID_HANDLE) return(INVALID_HANDLE);
@@ -911,9 +931,9 @@ void OpenTrade(ENUM_ORDER_TYPE type)
 
    bool ok=false;
    if(type==ORDER_TYPE_BUY)
-      ok = trade.Buy(lot, _Symbol, 0.0, sl, tp, InpComment);
+      ok = trade.Buy(lot, g_symbol, 0.0, sl, tp, InpComment);
    else
-      ok = trade.Sell(lot, _Symbol, 0.0, sl, tp, InpComment);
+      ok = trade.Sell(lot, g_symbol, 0.0, sl, tp, InpComment);
 
    if(ok)
       Notify(StringFormat("FUSION: %s ochildi. Lot=%.2f SL=%.5f TP=%.5f",
@@ -933,8 +953,8 @@ double CalcLot(double slPts)
    {
       double balance   = AccountInfoDouble(ACCOUNT_BALANCE);
       double riskMoney = balance * g_ovRisk / 100.0;
-      double tickVal   = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-      double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+      double tickVal   = SymbolInfoDouble(g_symbol, SYMBOL_TRADE_TICK_VALUE);
+      double tickSize  = SymbolInfoDouble(g_symbol, SYMBOL_TRADE_TICK_SIZE);
       double point     = symInfo.Point();
       if(tickSize>0 && tickVal>0)
       {
@@ -946,9 +966,9 @@ double CalcLot(double slPts)
    }
 
    // Lotni normalizatsiya qilish
-   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
-   double stepLot= SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double minLot = SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MAX);
+   double stepLot= SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_STEP);
 
    if(lot > InpMaxLot) lot = InpMaxLot;
    if(stepLot>0) lot = MathFloor(lot/stepLot)*stepLot;
@@ -971,7 +991,7 @@ void ManageOpenPositions()
       ulong ticket = PositionGetTicket(i);
       if(ticket==0) continue;
       if(!posInfo.SelectByTicket(ticket)) continue;
-      if(posInfo.Symbol()!=_Symbol) continue;
+      if(posInfo.Symbol()!=g_symbol) continue;
       if(posInfo.Magic()!=InpMagic)  continue;
 
       symInfo.RefreshRates();
@@ -1103,7 +1123,7 @@ bool TimeAllowed()
 
 int CurrentSpreadPoints()
 {
-   return((int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD));
+   return((int)SymbolInfoInteger(g_symbol, SYMBOL_SPREAD));
 }
 
 int CountPositions()
@@ -1114,7 +1134,7 @@ int CountPositions()
       ulong ticket=PositionGetTicket(i);
       if(ticket==0) continue;
       if(!posInfo.SelectByTicket(ticket)) continue;
-      if(posInfo.Symbol()==_Symbol && posInfo.Magic()==InpMagic) cnt++;
+      if(posInfo.Symbol()==g_symbol && posInfo.Magic()==InpMagic) cnt++;
    }
    return(cnt);
 }
@@ -1126,7 +1146,7 @@ void ClosePositionsByType(ENUM_POSITION_TYPE ptype)
       ulong ticket=PositionGetTicket(i);
       if(ticket==0) continue;
       if(!posInfo.SelectByTicket(ticket)) continue;
-      if(posInfo.Symbol()==_Symbol && posInfo.Magic()==InpMagic && posInfo.PositionType()==ptype)
+      if(posInfo.Symbol()==g_symbol && posInfo.Magic()==InpMagic && posInfo.PositionType()==ptype)
          trade.PositionClose(ticket);
    }
 }
@@ -1138,7 +1158,7 @@ void CloseAllPositions()
       ulong ticket=PositionGetTicket(i);
       if(ticket==0) continue;
       if(!posInfo.SelectByTicket(ticket)) continue;
-      if(posInfo.Symbol()==_Symbol && posInfo.Magic()==InpMagic)
+      if(posInfo.Symbol()==g_symbol && posInfo.Magic()==InpMagic)
          trade.PositionClose(ticket);
    }
 }

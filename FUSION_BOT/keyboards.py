@@ -75,6 +75,7 @@ def settings_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🛑 Stop Loss", callback_data="set:sl")],
         [InlineKeyboardButton(text="🎯 Take Profit", callback_data="set:tp")],
         [InlineKeyboardButton(text="⚖️ Risk %", callback_data="set:risk")],
+        [InlineKeyboardButton(text="🔢 Maks. savdo soni", callback_data="set:max_pos")],
         [InlineKeyboardButton(text="🕐 Timeframe", callback_data="user:timeframe")],
         [InlineKeyboardButton(text="🔙 Ortga", callback_data="user:menu")],
     ])

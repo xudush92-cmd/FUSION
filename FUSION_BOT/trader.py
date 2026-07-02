@@ -356,12 +356,13 @@ def _open_trade(symbol: str, direction: str, lot: float, sl_pts: int, tp_pts: in
 
 
 def _apply_sltp(symbol, direction, sl_pts, tp_pts, point, digits):
-    """Ochilgan pozitsiyaga SL/TP qo'yish (alohida so'rov)."""
+    """Eng oxirgi ochilgan pozitsiyaga SL/TP qo'yish (alohida so'rov)."""
     positions = mt5.positions_get(symbol=symbol) or []
     mine = [p for p in positions if p.magic == MAGIC]
     if not mine:
         return
-    pos = mine[-1]  # eng oxirgi ochilgan
+    # Eng yangi pozitsiyani vaqt bo'yicha tanlash
+    pos = max(mine, key=lambda p: getattr(p, "time_msc", p.time))
     open_price = pos.price_open
     if direction == "BUY":
         sl = round(open_price - sl_pts * point, digits) if sl_pts > 0 else 0.0
@@ -482,9 +483,15 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
     positions = mt5.positions_get(symbol=symbol) or []
     mine = [pp for pp in positions if pp.magic == MAGIC]
 
-    # Pozitsiya ochiq bo'lsa — SL/TP ga yetguncha kutamiz (yangi savdo ochmaymiz,
-    # qarama-qarshi signalda ham yopmaymiz). Har savdo o'z yakuniga yetadi.
-    if len(mine) > 0:
+    # Bir vaqtda ruxsat etilgan maksimal savdo soni (sozlamadan)
+    max_pos = int(settings.get("max_pos", 1))
+    if max_pos < 1:
+        max_pos = 1
+
+    # Ochiq savdolar SL/TP ga yetguncha yopilmaydi (churning yo'q).
+    # Lekin limit to'lmagan bo'lsa, yangi signalда qo'shimcha savdo ochiladi
+    # (qulay signal o'tkazib yuborilmaydi).
+    if len(mine) >= max_pos:
         return events
 
     if signal is None:

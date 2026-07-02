@@ -540,6 +540,7 @@ async def user_settings_menu(callback: CallbackQuery):
         f"🛑 Stop Loss: {settings.get('sl', 300)} punkt\n"
         f"🎯 Take Profit: {settings.get('tp', 600)} punkt\n"
         f"⚖️ Risk: {settings.get('risk', 1.0)}%\n"
+        f"🔢 Maks. savdo soni: {int(settings.get('max_pos', 1))}\n"
         f"🕐 Timeframe: {settings.get('timeframe', 'M5')}"
     )
     await callback.message.edit_text(text, reply_markup=settings_kb())
@@ -628,6 +629,7 @@ async def user_change_setting(callback: CallbackQuery, state: FSMContext):
         "sl": "Yangi Stop Loss (punkt, masalan: 300)",
         "tp": "Yangi Take Profit (punkt, masalan: 600)",
         "risk": "Yangi Risk (%, masalan: 1.5)",
+        "max_pos": "Bir vaqtda maks. savdo soni (masalan: 3)",
     }
     await state.update_data(setting_param=param)
     await callback.message.edit_text(f"✏️ {labels.get(param, param)} qiymatini kiriting:")
@@ -655,6 +657,7 @@ async def user_set_value(message: Message, state: FSMContext):
         "sl": (10, 10000, "Stop Loss 10 dan 10000 punkt gacha"),
         "tp": (10, 50000, "Take Profit 10 dan 50000 punkt gacha"),
         "risk": (0.1, 50.0, "Risk 0.1% dan 50% gacha"),
+        "max_pos": (1, 10, "Maks. savdo soni 1 dan 10 gacha"),
     }
 
     if param in limits:
@@ -663,6 +666,10 @@ async def user_set_value(message: Message, state: FSMContext):
             await message.answer(f"⚠️ {hint}. Qayta kiriting:")
             return
 
+    # max_pos butun son sifatida saqlanadi
+    if param == "max_pos":
+        value = int(value)
+
     await state.clear()
 
     settings = await db.get_settings(user["user_id"])
@@ -670,7 +677,8 @@ async def user_set_value(message: Message, state: FSMContext):
     await db.set_settings(user["user_id"], settings)
     await sync_user_to_ea(user)
 
-    labels = {"lot": "💎 Lot", "sl": "🛑 Stop Loss", "tp": "🎯 Take Profit", "risk": "⚖️ Risk"}
+    labels = {"lot": "💎 Lot", "sl": "🛑 Stop Loss", "tp": "🎯 Take Profit",
+              "risk": "⚖️ Risk", "max_pos": "🔢 Maks. savdo soni"}
     await message.answer(
         f"✅ {labels.get(param, param)} = {value} ga o'zgartirildi.",
         reply_markup=user_menu_kb()

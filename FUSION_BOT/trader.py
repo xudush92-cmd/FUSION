@@ -563,8 +563,21 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
 
     ok, err = _open_trade(symbol, signal, lot, sl_pts, tp_pts)
     if ok:
-        events.append(f"✅ {signal} {symbol} ochildi | lot {lot} | SL {sl_pts} | TP {tp_pts}")
-        logger.info(f"User {user['user_id']}: {signal} {symbol} ochildi")
+        # Savdo haqiqatan ochiq turganini tekshirish (soxta xabarning oldini olish)
+        time.sleep(0.5)
+        positions_after = mt5.positions_get(symbol=symbol) or []
+        mine_after = [pp for pp in positions_after if pp.magic == MAGIC]
+        if len(mine_after) > len(mine):
+            events.append(f"✅ {signal} {symbol} ochildi | lot {lot} | SL {sl_pts} | TP {tp_pts}")
+            logger.info(f"User {user['user_id']}: {signal} {symbol} ochildi")
+        else:
+            # Ochildi-yu darrov yopildi (SL/TP juda kichik yoki spread katta)
+            events.append(
+                f"⚠️ {symbol} {signal} ochildi, lekin DARROV yopildi!\n"
+                f"Sabab: SL/TP juda kichik ({sl_pts}/{tp_pts}) yoki spread katta.\n"
+                f"💡 Yechim: SL/TP ni oshiring (masalan 100+)."
+            )
+            logger.warning(f"User {user['user_id']}: savdo ochildi-yu darrov yopildi (SL={sl_pts} TP={tp_pts})")
         _last_error.pop(user["user_id"], None)  # xato holatini tozalash
     else:
         logger.warning(f"User {user['user_id']}: savdo ochish xatosi: {err}")

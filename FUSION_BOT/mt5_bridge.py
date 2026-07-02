@@ -68,47 +68,59 @@ class MT5Connection:
 
     def connect(self, login: int, server: str, password: str) -> tuple[bool, str]:
         """
-        MT5 ga ulanish (cache bilan).
+        MT5 ga ulanish (cache bilan). IPC xatosida to'liq qayta ishga tushiradi.
         Qaytaradi: (muvaffaqiyat, xato_xabari)
         """
         # Agar cache amal qilsa va bir xil hisob — qayta ulanmaymiz
         if not self._needs_reconnect(login, server):
             return True, ""
 
-        # Yangi ulanish
-        if not self._initialized:
-            if not mt5.initialize(MT5_PATH):
-                error = mt5.last_error()
-                error_msg = f"MT5 terminalni ishga tushirib bo'lmadi (kod: {error})"
-                logger.error(error_msg)
-                return False, error_msg
-            self._initialized = True
+        # 2 marta urinish: 1-si oddiy, 2-si to'liq qayta ishga tushirish bilan
+        for attempt in range(2):
+            if attempt == 1:
+                # IPC uzilgan — to'liq tozalab qaytadan boshlaymiz
+                try:
+                    mt5.shutdown()
+                except Exception:
+                    pass
+                self._initialized = False
+                time.sleep(1.0)
 
-        # Login
-        authorized = mt5.login(login, password=password, server=server)
-        if not authorized:
+            if not self._initialized:
+                if not mt5.initialize(MT5_PATH):
+                    error = mt5.last_error()
+                    logger.error(f"MT5 initialize xatosi: {error}")
+                    continue  # qayta urinish
+                self._initialized = True
+
+            authorized = mt5.login(login, password=password, server=server)
+            if authorized:
+                self._current_login = login
+                self._current_server = server
+                self._last_connect_time = time.time()
+                logger.info(f"MT5 ulanish muvaffaqiyatli: login={login}, server={server}")
+                return True, ""
+
             error = mt5.last_error()
             error_code = error[0] if error else 0
+            logger.error(f"MT5 login xato (urinish {attempt+1}): login={login}, error={error}")
+            # IPC xatosi (-10001) yoki terminal xatosi — qayta urinishda to'liq reset
+            if error_code == -10001:
+                self._initialized = False
+                continue
 
-            # Xato turlarini aniqlash
+            # Boshqa xatolar — qayta urinish shart emas
+            if error_code == -10004:
+                return False, "Login yoki parol noto'g'ri"
+            if error_code == -10003:
+                return False, "Server nomi noto'g'ri yoki ulanib bo'lmadi"
             if error_code == -2:
-                error_msg = "MT5 terminal topilmadi yoki ishlamayapti"
-            elif error_code == -10004:
-                error_msg = "Login yoki parol noto'g'ri"
-            elif error_code == -10003:
-                error_msg = "Server nomi noto'g'ri yoki ulanib bo'lmadi"
-            else:
-                error_msg = f"MT5 login xatosi (kod: {error_code})"
+                return False, "MT5 terminal topilmadi yoki ishlamayapti"
+            return False, f"MT5 login xatosi (kod: {error_code})"
 
-            logger.error(f"MT5 login xato: login={login}, server={server}, error={error}")
-            return False, error_msg
-
-        # Cache yangilash
-        self._current_login = login
-        self._current_server = server
-        self._last_connect_time = time.time()
-        logger.info(f"MT5 ulanish muvaffaqiyatli: login={login}, server={server}")
-        return True, ""
+        # Ikkala urinish ham muvaffaqiyatsiz
+        self._initialized = False  # keyingi tsiklda toza boshlansin
+        return False, "MT5 terminal bilan aloqa uzildi (IPC). MT5 ochiq va Tester yopiq ekanini tekshiring."
 
     def disconnect(self):
         """Ulanishni yopish"""

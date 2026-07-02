@@ -482,21 +482,8 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
     positions = mt5.positions_get(symbol=symbol) or []
     mine = [pp for pp in positions if pp.magic == MAGIC]
 
-    # Qarama-qarshi signalda mavjud pozitsiyani yopish
-    if signal == "BUY":
-        for pp in mine:
-            if pp.type == mt5.POSITION_TYPE_SELL:
-                _close_position(pp)
-                events.append(f"⏹ {symbol} SELL yopildi (qarama-qarshi signal)")
-    elif signal == "SELL":
-        for pp in mine:
-            if pp.type == mt5.POSITION_TYPE_BUY:
-                _close_position(pp)
-                events.append(f"⏹ {symbol} BUY yopildi (qarama-qarshi signal)")
-
-    # Qayta tekshirish — hali ochiq pozitsiya bo'lsa yangi savdo ochilmaydi
-    positions = mt5.positions_get(symbol=symbol) or []
-    mine = [pp for pp in positions if pp.magic == MAGIC]
+    # Pozitsiya ochiq bo'lsa — SL/TP ga yetguncha kutamiz (yangi savdo ochmaymiz,
+    # qarama-qarshi signalda ham yopmaymiz). Har savdo o'z yakuniga yetadi.
     if len(mine) > 0:
         return events
 

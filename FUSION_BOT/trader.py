@@ -280,26 +280,17 @@ def _close_position(pos) -> None:
     mt5.order_send(req)
 
 
-def _open_trade(symbol: str, direction: str, lot: float, sl_pts: int, tp_pts: int) -> tuple[bool, str]:
+def _open_trade(symbol: str, direction: str, lot: float) -> tuple[bool, str, int]:
+    """
+    Faqat lotni ochadi (SL/TP SIZ). Tartib: avval lot ochiladi.
+    Qaytaradi: (muvaffaqiyat, xato, pozitsiya_ticket)
+    """
     info = mt5.symbol_info(symbol)
     tick = mt5.symbol_info_tick(symbol)
     if info is None or tick is None:
-        return False, "symbol ma'lumoti yo'q"
+        return False, "symbol ma'lumoti yo'q", 0
 
-    point = info.point
-    digits = info.digits
     lot = _normalize_lot(info, lot)
-
-    # Brokerning minimal stop masofasi (punktda). SL/TP shundan yaqin bo'lolmaydi.
-    stops_level = getattr(info, "trade_stops_level", 0) or 0
-    freeze_level = getattr(info, "trade_freeze_level", 0) or 0
-    min_dist = max(stops_level, freeze_level)
-    # Foydalanuvchi qiymatini hurmat qilamiz, lekin brokerning minimalidan past bo'lolmaydi
-    buffer = max(min_dist, 1)
-    if sl_pts > 0 and sl_pts < buffer:
-        sl_pts = buffer
-    if tp_pts > 0 and tp_pts < buffer:
-        tp_pts = buffer
 
     if direction == "BUY":
         otype = mt5.ORDER_TYPE_BUY
@@ -308,7 +299,6 @@ def _open_trade(symbol: str, direction: str, lot: float, sl_pts: int, tp_pts: in
         otype = mt5.ORDER_TYPE_SELL
         price = tick.bid
 
-    # 1-QADAM: Bozor buyrug'ini SL/TP SIZ ochish (10016 xatosining oldini oladi)
     base_req = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
@@ -325,7 +315,6 @@ def _open_trade(symbol: str, direction: str, lot: float, sl_pts: int, tp_pts: in
                 mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_RETURN]
     seen = []
     last_err = ""
-    opened = False
     for fill in fillings:
         if fill in seen:
             continue
@@ -337,33 +326,36 @@ def _open_trade(symbol: str, direction: str, lot: float, sl_pts: int, tp_pts: in
             last_err = f"order_send None: {mt5.last_error()}"
             continue
         if result.retcode == mt5.TRADE_RETCODE_DONE:
-            opened = True
-            break
+            # result.order — bozor buyrug'i uchun pozitsiya ticketi
+            return True, "", int(getattr(result, "order", 0))
         if result.retcode == 10030:  # filling qo'llab-quvvatlanmaydi
             last_err = "filling mode qo'llab-quvvatlanmaydi"
             continue
         last_err = _retcode_message(result.retcode)
         break
 
-    if not opened:
-        return False, last_err
-
-    # 2-QADAM: Ochilgan pozitsiyaga SL/TP qo'yish (best-effort)
-    if sl_pts > 0 or tp_pts > 0:
-        _apply_sltp(symbol, direction, sl_pts, tp_pts, point, digits)
-
-    return True, ""
+    return False, last_err, 0
 
 
-def _apply_sltp(symbol, direction, sl_pts, tp_pts, point, digits):
-    """Eng oxirgi ochilgan pozitsiyaga SL/TP qo'yish (alohida so'rov)."""
-    positions = mt5.positions_get(symbol=symbol) or []
-    mine = [p for p in positions if p.magic == MAGIC]
-    if not mine:
-        return
-    # Eng yangi pozitsiyani vaqt bo'yicha tanlash
-    pos = max(mine, key=lambda p: getattr(p, "time_msc", p.time))
-    _set_position_sltp(pos, direction, sl_pts, tp_pts, point, digits)
+def _wait_for_position(symbol: str, ticket: int, timeout: float = 2.0):
+    """
+    Ochilgan pozitsiya haqiqatan paydo bo'lganini kutish (tasdiqlash).
+    Qaytaradi: pozitsiya obyekti yoki None.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        # Ticket bo'yicha aniq qidirish
+        if ticket:
+            positions = mt5.positions_get(ticket=ticket)
+            if positions:
+                return positions[0]
+        # Zaxira: symbol bo'yicha eng yangi o'z pozitsiyamiz
+        positions = mt5.positions_get(symbol=symbol) or []
+        mine = [p for p in positions if p.magic == MAGIC]
+        if mine:
+            return max(mine, key=lambda p: getattr(p, "time_msc", p.time))
+        time.sleep(0.2)
+    return None
 
 
 def _ensure_sltp(symbol: str, sl_pts: int, tp_pts: int) -> int:
@@ -564,32 +556,42 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
     sl_pts = sl_pts_cfg
     tp_pts = tp_pts_cfg
 
-    ok, err = _open_trade(symbol, signal, lot, sl_pts, tp_pts)
-    if ok:
-        # Savdo haqiqatan ochiq turganini tekshirish (soxta xabarning oldini olish)
-        time.sleep(0.5)
-        positions_after = mt5.positions_get(symbol=symbol) or []
-        mine_after = [pp for pp in positions_after if pp.magic == MAGIC]
-        if len(mine_after) > len(mine):
-            events.append(f"✅ {signal} {symbol} ochildi | lot {lot} | SL {sl_pts} | TP {tp_pts}")
-            logger.info(f"User {user['user_id']}: {signal} {symbol} ochildi")
-        else:
-            # Ochildi-yu darrov yopildi (SL/TP juda kichik yoki spread katta)
-            events.append(
-                f"⚠️ {symbol} {signal} ochildi, lekin DARROV yopildi!\n"
-                f"Sabab: SL/TP juda kichik ({sl_pts}/{tp_pts}) yoki spread katta.\n"
-                f"💡 Yechim: SL/TP ni oshiring (masalan 100+)."
-            )
-            logger.warning(f"User {user['user_id']}: savdo ochildi-yu darrov yopildi (SL={sl_pts} TP={tp_pts})")
-        _last_error.pop(user["user_id"], None)  # xato holatini tozalash
-    else:
+    # 1-QADAM: Lotni ochish (SL/TP siz)
+    ok, err, ticket = _open_trade(symbol, signal, lot)
+    if not ok:
         logger.warning(f"User {user['user_id']}: savdo ochish xatosi: {err}")
-        # Bir xil xatoni takror yubormaslik (spam oldini olish)
         uid = user["user_id"]
         prev = _last_error.get(uid)
         now = time.time()
         if prev is None or prev[0] != err or (now - prev[1]) >= ERROR_REPEAT_SEC:
             _last_error[uid] = (err, now)
             events.append(f"⚠️ {symbol} {signal} ochilmadi: {err}")
+        return events
+
+    # 2-QADAM: Pozitsiya haqiqatan ochilganini tasdiqlash
+    pos = _wait_for_position(symbol, ticket, timeout=2.0)
+    if pos is None:
+        events.append(
+            f"⚠️ {symbol} {signal} ochildi, lekin DARROV yopildi!\n"
+            f"Sabab: SL/TP yoki spread muammosi. SL/TP ni oshiring."
+        )
+        logger.warning(f"User {user['user_id']}: pozitsiya tasdiqlanmadi (ticket {ticket})")
+        return events
+
+    # 3-QADAM: Endi aniq shu pozitsiyaga SL/TP qo'yish
+    info = mt5.symbol_info(symbol)
+    point = info.point
+    digits = info.digits
+    sltp_ok = _set_position_sltp(pos, signal, sl_pts, tp_pts, point, digits)
+
+    if sltp_ok:
+        events.append(f"✅ {signal} {symbol} ochildi | lot {lot} | SL {sl_pts} | TP {tp_pts}")
+    else:
+        events.append(
+            f"✅ {signal} {symbol} ochildi | lot {lot}\n"
+            f"⚠️ Lekin SL/TP qo'yilmadi (broker rad etdi). Keyingi tsiklda qayta urinadi."
+        )
+    logger.info(f"User {user['user_id']}: {signal} {symbol} ochildi (ticket {pos.ticket})")
+    _last_error.pop(user["user_id"], None)
 
     return events

@@ -391,7 +391,7 @@ def _ensure_sltp(symbol: str, sl_pts: int, tp_pts: int) -> int:
 
 
 def _set_position_sltp(pos, direction, sl_pts, tp_pts, point, digits) -> bool:
-    """Berilgan pozitsiyaga SL/TP qo'yish (broker minimal masofasini hisobga olib)."""
+    """Berilgan pozitsiyaga SL/TP qo'yish (broker minimal masofa + spread, xatoda qayta urinish)."""
     info = mt5.symbol_info(pos.symbol)
     tick = mt5.symbol_info_tick(pos.symbol)
     if info is None or tick is None:
@@ -399,41 +399,44 @@ def _set_position_sltp(pos, direction, sl_pts, tp_pts, point, digits) -> bool:
 
     stops_level = getattr(info, "trade_stops_level", 0) or 0
     freeze_level = getattr(info, "trade_freeze_level", 0) or 0
-    min_dist = max(stops_level, freeze_level, 1) * point
+    spread = getattr(info, "spread", 0) or 0
+    # Minimal masofa (punktda): broker limiti + spread + zaxira
+    min_pts = max(stops_level, freeze_level) + spread + 5
 
-    open_price = pos.price_open
-    if direction == "BUY":
-        cur = tick.bid
-        sl = (open_price - sl_pts * point) if sl_pts > 0 else 0.0
-        tp = (open_price + tp_pts * point) if tp_pts > 0 else 0.0
-        # SL joriy narxdan kamida min_dist past, TP kamida min_dist yuqori bo'lsin
-        if sl > 0 and (cur - sl) < min_dist:
-            sl = cur - min_dist
-        if tp > 0 and (tp - cur) < min_dist:
-            tp = cur + min_dist
-    else:
-        cur = tick.ask
-        sl = (open_price + sl_pts * point) if sl_pts > 0 else 0.0
-        tp = (open_price - tp_pts * point) if tp_pts > 0 else 0.0
-        if sl > 0 and (sl - cur) < min_dist:
-            sl = cur + min_dist
-        if tp > 0 and (cur - tp) < min_dist:
-            tp = cur - min_dist
+    # Bir necha marta urinish — har safar masofani kattalashtirib (10016 uchun)
+    for attempt in range(4):
+        factor = 1 + attempt  # 1x, 2x, 3x, 4x
+        sl_dist = max(sl_pts, min_pts) * factor * point if sl_pts > 0 else 0.0
+        tp_dist = max(tp_pts, min_pts) * factor * point if tp_pts > 0 else 0.0
 
-    req = {
-        "action": mt5.TRADE_ACTION_SLTP,
-        "symbol": pos.symbol,
-        "position": pos.ticket,
-        "sl": round(sl, digits),
-        "tp": round(tp, digits),
-        "magic": MAGIC,
-    }
-    result = mt5.order_send(req)
-    if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+        if direction == "BUY":
+            ref = tick.bid
+            sl = round(ref - sl_dist, digits) if sl_dist > 0 else 0.0
+            tp = round(ref + tp_dist, digits) if tp_dist > 0 else 0.0
+        else:
+            ref = tick.ask
+            sl = round(ref + sl_dist, digits) if sl_dist > 0 else 0.0
+            tp = round(ref - tp_dist, digits) if tp_dist > 0 else 0.0
+
+        req = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "symbol": pos.symbol,
+            "position": pos.ticket,
+            "sl": sl,
+            "tp": tp,
+            "magic": MAGIC,
+        }
+        result = mt5.order_send(req)
+        if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
+            return True
+        # 10016 (noto'g'ri stop) bo'lsa masofani kattalashtirib qayta urinamiz
         code = result.retcode if result else "None"
-        logger.warning(f"SL/TP qo'yilmadi (ticket {pos.ticket}): retcode {code}")
-        return False
-    return True
+        if code != 10016:
+            logger.warning(f"SL/TP qo'yilmadi (ticket {pos.ticket}): retcode {code}")
+            return False
+
+    logger.warning(f"SL/TP qo'yilmadi (ticket {pos.ticket}): 10016 (masofa juda yaqin)")
+    return False
 
 
 def _retcode_message(code: int) -> str:

@@ -363,26 +363,77 @@ def _apply_sltp(symbol, direction, sl_pts, tp_pts, point, digits):
         return
     # Eng yangi pozitsiyani vaqt bo'yicha tanlash
     pos = max(mine, key=lambda p: getattr(p, "time_msc", p.time))
+    _set_position_sltp(pos, direction, sl_pts, tp_pts, point, digits)
+
+
+def _ensure_sltp(symbol: str, sl_pts: int, tp_pts: int) -> int:
+    """
+    Ochiq savdolarni tekshirib, SL/TP si yo'qlariga qo'yadi.
+    Bu savdolarning SL/TP orqali yopilishini kafolatlaydi.
+    Qaytaradi: tuzatilgan savdolar soni.
+    """
+    info = mt5.symbol_info(symbol)
+    if info is None:
+        return 0
+    point = info.point
+    digits = info.digits
+    positions = mt5.positions_get(symbol=symbol) or []
+    mine = [p for p in positions if p.magic == MAGIC]
+    fixed = 0
+    for pos in mine:
+        need_sl = (pos.sl == 0.0 and sl_pts > 0)
+        need_tp = (pos.tp == 0.0 and tp_pts > 0)
+        if need_sl or need_tp:
+            direction = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
+            if _set_position_sltp(pos, direction, sl_pts, tp_pts, point, digits):
+                fixed += 1
+    return fixed
+
+
+def _set_position_sltp(pos, direction, sl_pts, tp_pts, point, digits) -> bool:
+    """Berilgan pozitsiyaga SL/TP qo'yish (broker minimal masofasini hisobga olib)."""
+    info = mt5.symbol_info(pos.symbol)
+    tick = mt5.symbol_info_tick(pos.symbol)
+    if info is None or tick is None:
+        return False
+
+    stops_level = getattr(info, "trade_stops_level", 0) or 0
+    freeze_level = getattr(info, "trade_freeze_level", 0) or 0
+    min_dist = max(stops_level, freeze_level, 1) * point
+
     open_price = pos.price_open
     if direction == "BUY":
-        sl = round(open_price - sl_pts * point, digits) if sl_pts > 0 else 0.0
-        tp = round(open_price + tp_pts * point, digits) if tp_pts > 0 else 0.0
+        cur = tick.bid
+        sl = (open_price - sl_pts * point) if sl_pts > 0 else 0.0
+        tp = (open_price + tp_pts * point) if tp_pts > 0 else 0.0
+        # SL joriy narxdan kamida min_dist past, TP kamida min_dist yuqori bo'lsin
+        if sl > 0 and (cur - sl) < min_dist:
+            sl = cur - min_dist
+        if tp > 0 and (tp - cur) < min_dist:
+            tp = cur + min_dist
     else:
-        sl = round(open_price + sl_pts * point, digits) if sl_pts > 0 else 0.0
-        tp = round(open_price - tp_pts * point, digits) if tp_pts > 0 else 0.0
+        cur = tick.ask
+        sl = (open_price + sl_pts * point) if sl_pts > 0 else 0.0
+        tp = (open_price - tp_pts * point) if tp_pts > 0 else 0.0
+        if sl > 0 and (sl - cur) < min_dist:
+            sl = cur + min_dist
+        if tp > 0 and (cur - tp) < min_dist:
+            tp = cur - min_dist
 
     req = {
         "action": mt5.TRADE_ACTION_SLTP,
-        "symbol": symbol,
+        "symbol": pos.symbol,
         "position": pos.ticket,
-        "sl": sl,
-        "tp": tp,
+        "sl": round(sl, digits),
+        "tp": round(tp, digits),
         "magic": MAGIC,
     }
     result = mt5.order_send(req)
     if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
         code = result.retcode if result else "None"
         logger.warning(f"SL/TP qo'yilmadi (ticket {pos.ticket}): retcode {code}")
+        return False
+    return True
 
 
 def _retcode_message(code: int) -> str:
@@ -466,6 +517,15 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
         logger.warning(f"User {user['user_id']}: symbol topilmadi: {requested}")
         return events
 
+    sl_pts_cfg = int(settings.get("sl", 300))
+    tp_pts_cfg = int(settings.get("tp", 600))
+
+    # HAR TSIKLDA: ochiq savdolarda SL/TP borligini tekshirish.
+    # Agar biror savdo SL/TP siz qolgan bo'lsa — qo'yamiz (yopilishini kafolatlash).
+    fixed = _ensure_sltp(symbol, sl_pts_cfg, tp_pts_cfg)
+    if fixed:
+        events.append(f"🛠 {symbol}: {fixed} ta savdoga SL/TP qo'yildi")
+
     rates = mt5.copy_rates_from_pos(symbol, tf, 0, 500)
     if rates is None or len(rates) < 210:
         return events
@@ -498,8 +558,8 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
         return events
 
     lot = float(settings.get("lot", 0.10))
-    sl_pts = int(settings.get("sl", 300))
-    tp_pts = int(settings.get("tp", 600))
+    sl_pts = sl_pts_cfg
+    tp_pts = tp_pts_cfg
 
     ok, err = _open_trade(symbol, signal, lot, sl_pts, tp_pts)
     if ok:

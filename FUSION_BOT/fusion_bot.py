@@ -654,8 +654,8 @@ async def user_set_value(message: Message, state: FSMContext):
     # Qiymat chegaralarini tekshirish
     limits = {
         "lot": (0.01, 100.0, "Lot 0.01 dan 100 gacha bo'lishi kerak"),
-        "sl": (10, 10000, "Stop Loss 10 dan 10000 punkt gacha"),
-        "tp": (10, 50000, "Take Profit 10 dan 50000 punkt gacha"),
+        "sl": (1, 10000, "Stop Loss 1 dan 10000 punkt gacha"),
+        "tp": (1, 50000, "Take Profit 1 dan 50000 punkt gacha"),
         "risk": (0.1, 50.0, "Risk 0.1% dan 50% gacha"),
         "max_pos": (1, 10, "Maks. savdo soni 1 dan 10 gacha"),
     }

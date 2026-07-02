@@ -294,8 +294,8 @@ def _open_trade(symbol: str, direction: str, lot: float, sl_pts: int, tp_pts: in
     stops_level = getattr(info, "trade_stops_level", 0) or 0
     freeze_level = getattr(info, "trade_freeze_level", 0) or 0
     min_dist = max(stops_level, freeze_level)
-    # Xavfsizlik buferi: minimal masofadan kamida shuncha uzoq
-    buffer = max(min_dist + 10, 10)
+    # Foydalanuvchi qiymatini hurmat qilamiz, lekin brokerning minimalidan past bo'lolmaydi
+    buffer = max(min_dist, 1)
     if sl_pts > 0 and sl_pts < buffer:
         sl_pts = buffer
     if tp_pts > 0 and tp_pts < buffer:

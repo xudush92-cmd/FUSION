@@ -159,7 +159,67 @@ Katta TF (H1+) → kam signal, barqaror, ishonchli.
 
 ---
 
-## 8. Muhim ogohlantirishlar
+## 8. Skalping (Scalping) — batafsil
+
+**Skalping nima?** — Bu qisqa vaqtli savdo uslubi: kichik foyda, lekin
+juda tez-tez. Savdo bir necha soniya/daqiqa ochiq turadi. Ko'p savdodan
+kichik-kichik foydalar yig'iladi.
+
+### Robotdagi skalping strategiyalari
+
+| Strategiya | Indikator | BUY | SELL | Timeframe |
+|-----------|-----------|-----|------|-----------|
+| Skalp RSI | RSI(7) | < 25 | > 75 | M1, M5 |
+| Skalp MA | EMA(5/20) | tez yuqoriga kesса | tez pastga kesса | M1, M5 |
+| Skalp Stochastic | Stoch(5) | < 15 | > 85 | M1, M5 |
+
+Bu strategiyalar oddiy strategiyalardan **sezgirroq** (qisqa davr, o'tkir darajalar) —
+shuning uchun ko'proq signal beradi.
+
+### Skalping uchun sozlamalar
+
+| Sozlama | Tavsiya | Izoh |
+|---------|---------|------|
+| Timeframe | **M1** yoki **M5** | M1 eng tez, M5 barqarorroq |
+| Stop Loss | Kichik (forex: 50-150) | Oltinda kattaroq kerak |
+| Take Profit | Kichik (forex: 50-200) | SL dan biroz katta |
+| Maks. savdo soni | 2-3 | Ko'p qilmang |
+| Lot | Kichik (0.01-0.10) | Risk cheklovi |
+
+### Skalping uchun MUHIM shartlar
+
+1. **Past spread** — ECN/Raw hisob kerak. Spread katta bo'lsa, kichik TP
+   spreadni qoplamaydi va zarar bo'ladi.
+2. **Tez internet/VPS** — AWS yaxshi. Kechikish bo'lmasin.
+3. **Broker ruxsati** — hamma broker skalpingga ruxsat bermaydi.
+4. **SL/TP spreaddan katta bo'lsin** — aks holda savdo darrov yopiladi.
+
+### Skalping kamchiliklari (ogohlantirish)
+
+- **Ko'p spread to'lash** — har savdoda spread to'laysiz, ko'p savdo = ko'p xarajat
+- **Ko'p "shovqin"** — M1 da narx tartibsiz, yolg'on signallar ko'p
+- **Doimiy kuzatish** — tez o'zgaradi, e'tibor talab qiladi
+- **Stress** — tez-tez savdo, tez-tez qaror
+
+### Skalping vs Trend (taqqoslash)
+
+| | Skalping | Trend |
+|---|----------|-------|
+| Foyda/savdo | Kichik | Katta |
+| Savdo soni | Ko'p | Kam |
+| Timeframe | M1, M5 | H1, H4, D1 |
+| Spread ta'siri | Katta (muhim) | Kichik |
+| Kuzatish | Doimiy | Kam |
+
+### Oltinda (XAUUSD) skalping
+
+Oltin tez harakatlanadi, shuning uchun skalpingda ham SL/TP ni
+kichik qo'ymang. Broker punktiga qarab: SL 1000-2000, TP 2000-4000
+(kichik SL darrov urилиб yopiladi).
+
+---
+
+## 9. Muhim ogohlantirishlar
 
 - Hech qanday robot foyda KAFOLATLAMAYDI
 - Signal — bu faqat "ehtimol", bozor har doim mantiqqa bo'ysunmaydi

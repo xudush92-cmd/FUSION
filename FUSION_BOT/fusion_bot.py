@@ -541,10 +541,38 @@ async def user_settings_menu(callback: CallbackQuery):
         f"🎯 Take Profit: {settings.get('tp', 600)} punkt\n"
         f"⚖️ Risk: {settings.get('risk', 1.0)}%\n"
         f"🔢 Maks. savdo soni: {int(settings.get('max_pos', 1))}\n"
-        f"🕐 Timeframe: {settings.get('timeframe', 'M5')}"
+        f"🕐 Timeframe: {settings.get('timeframe', 'M5')}\n"
+        f"🖐 Qo'lda ochilganga SL/TP: {'YOQILGAN' if settings.get('manage_manual', False) else 'ochiq emas'}"
     )
     await callback.message.edit_text(text, reply_markup=settings_kb())
     await callback.answer()
+
+
+@router.callback_query(F.data == "user:toggle_manual")
+async def user_toggle_manual(callback: CallbackQuery):
+    user = await get_active_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    settings = await db.get_settings(user["user_id"])
+    new_val = not bool(settings.get("manage_manual", False))
+    settings["manage_manual"] = new_val
+    await db.set_settings(user["user_id"], settings)
+    holat = "YOQILDI ✅" if new_val else "o'chirildi"
+    await callback.answer(f"Qo'lda ochilganga SL/TP: {holat}", show_alert=True)
+    # Sozlamalar menyusini yangilash
+    text = (
+        "⚙️ Sozlamalar:\n\n"
+        f"💱 Juftlik: {settings.get('symbol', 'grafikdagi')}\n"
+        f"💎 Lot: {settings.get('lot', 0.10)}\n"
+        f"🛑 Stop Loss: {settings.get('sl', 300)} punkt\n"
+        f"🎯 Take Profit: {settings.get('tp', 600)} punkt\n"
+        f"⚖️ Risk: {settings.get('risk', 1.0)}%\n"
+        f"🔢 Maks. savdo soni: {int(settings.get('max_pos', 1))}\n"
+        f"🕐 Timeframe: {settings.get('timeframe', 'M5')}\n"
+        f"🖐 Qo'lda ochilganga SL/TP: {'YOQILGAN' if new_val else 'ochiq emas'}"
+    )
+    await callback.message.edit_text(text, reply_markup=settings_kb())
 
 
 @router.callback_query(F.data == "user:symbol")

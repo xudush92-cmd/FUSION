@@ -358,10 +358,10 @@ def _wait_for_position(symbol: str, ticket: int, timeout: float = 2.0):
     return None
 
 
-def _ensure_sltp(symbol: str, sl_pts: int, tp_pts: int) -> int:
+def _ensure_sltp(symbol: str, sl_pts: int, tp_pts: int, manage_manual: bool = False) -> int:
     """
     Ochiq savdolarni tekshirib, SL/TP si yo'qlariga qo'yadi.
-    Bu savdolarning SL/TP orqali yopilishini kafolatlaydi.
+    manage_manual=True bo'lsa, qo'lda ochilgan (boshqa magic) savdolarga ham qo'yadi.
     Qaytaradi: tuzatilgan savdolar soni.
     """
     info = mt5.symbol_info(symbol)
@@ -370,9 +370,12 @@ def _ensure_sltp(symbol: str, sl_pts: int, tp_pts: int) -> int:
     point = info.point
     digits = info.digits
     positions = mt5.positions_get(symbol=symbol) or []
-    mine = [p for p in positions if p.magic == MAGIC]
+    if manage_manual:
+        targets = list(positions)  # hamma savdo (o'ziniki + qo'lda ochilgan)
+    else:
+        targets = [p for p in positions if p.magic == MAGIC]  # faqat robot savdolari
     fixed = 0
-    for pos in mine:
+    for pos in targets:
         need_sl = (pos.sl == 0.0 and sl_pts > 0)
         need_tp = (pos.tp == 0.0 and tp_pts > 0)
         if need_sl or need_tp:
@@ -517,7 +520,9 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
 
     # HAR TSIKLDA: ochiq savdolarda SL/TP borligini tekshirish.
     # Agar biror savdo SL/TP siz qolgan bo'lsa — qo'yamiz (yopilishini kafolatlash).
-    fixed = _ensure_sltp(symbol, sl_pts_cfg, tp_pts_cfg)
+    # manage_manual=True bo'lsa qo'lda ochilgan savdolarga ham qo'yadi.
+    manage_manual = bool(settings.get("manage_manual", False))
+    fixed = _ensure_sltp(symbol, sl_pts_cfg, tp_pts_cfg, manage_manual)
     if fixed:
         events.append(f"🛠 {symbol}: {fixed} ta savdoga SL/TP qo'yildi")
 

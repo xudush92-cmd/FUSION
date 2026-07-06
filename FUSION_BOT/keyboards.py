@@ -81,6 +81,7 @@ def settings_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🛑 Kunlik zarar limiti %", callback_data="set:daily_loss")],
         [InlineKeyboardButton(text="🔒 Break-even (yoq/o'ch)", callback_data="user:toggle_be")],
         [InlineKeyboardButton(text="📉 Trailing Stop (yoq/o'ch)", callback_data="user:toggle_trail")],
+        [InlineKeyboardButton(text="🔄 Yo'nalish o'zgarsa foydani yop", callback_data="user:toggle_reverse")],
         [InlineKeyboardButton(text="🖐 Qo'lda ochilganga SL/TP", callback_data="user:toggle_manual")],
         [InlineKeyboardButton(text="🔙 Ortga", callback_data="user:menu")],
     ])

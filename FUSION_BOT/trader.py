@@ -672,6 +672,22 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
     positions = mt5.positions_get(symbol=symbol) or []
     mine = [pp for pp in positions if pp.magic == MAGIC]
 
+    # AQLLI CHIQISH: yo'nalish o'zgarsa (qarama-qarshi signal) FAQAT foydadagi
+    # savdolarni yopish (foydani qulflash). Zarardagilar SL/TP gacha qoladi.
+    if bool(settings.get("close_profit_reverse", False)) and signal is not None:
+        closed_profit = 0
+        for pp in mine:
+            is_buy = (pp.type == mt5.POSITION_TYPE_BUY)
+            opposite = (signal == "SELL" and is_buy) or (signal == "BUY" and not is_buy)
+            if opposite and pp.profit > 0:
+                _close_position(pp)
+                closed_profit += 1
+        if closed_profit:
+            events.append(f"💰 {symbol}: {closed_profit} ta foydadagi savdo yopildi (yo'nalish o'zgardi)")
+            # Pozitsiyalarni qayta o'qish
+            positions = mt5.positions_get(symbol=symbol) or []
+            mine = [pp for pp in positions if pp.magic == MAGIC]
+
     # Bir vaqtda ruxsat etilgan maksimal savdo soni (sozlamadan)
     max_pos = int(settings.get("max_pos", 1))
     if max_pos < 1:

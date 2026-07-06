@@ -80,6 +80,7 @@ def build_settings_text(settings: dict) -> str:
         f"🛑 Kunlik zarar limiti: {dl_txt}\n"
         f"🔒 Break-even: {onoff('breakeven')}\n"
         f"📉 Trailing Stop: {onoff('trailing')}\n"
+        f"🔄 Yo'nalish o'zgarsa foydani yop: {onoff('close_profit_reverse')}\n"
         f"🖐 Qo'lda ochilganga SL/TP: {onoff('manage_manual')}"
     )
 
@@ -600,6 +601,20 @@ async def user_toggle_trail(callback: CallbackQuery):
     settings["trailing"] = new_val
     await db.set_settings(user["user_id"], settings)
     await callback.answer(f"Trailing Stop: {'YOQILDI ✅' if new_val else 'ochirildi'}", show_alert=True)
+    await callback.message.edit_text(build_settings_text(settings), reply_markup=settings_kb())
+
+
+@router.callback_query(F.data == "user:toggle_reverse")
+async def user_toggle_reverse(callback: CallbackQuery):
+    user = await get_active_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    settings = await db.get_settings(user["user_id"])
+    new_val = not bool(settings.get("close_profit_reverse", False))
+    settings["close_profit_reverse"] = new_val
+    await db.set_settings(user["user_id"], settings)
+    await callback.answer(f"Yo'nalish o'zgarsa foydani yopish: {'YOQILDI ✅' if new_val else 'ochirildi'}", show_alert=True)
     await callback.message.edit_text(build_settings_text(settings), reply_markup=settings_kb())
 
 

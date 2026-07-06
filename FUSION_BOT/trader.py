@@ -413,13 +413,19 @@ def _manage_open_positions(symbol: str, settings: dict) -> list:
     sl_pts = int(settings.get("sl", 300))
     tp_pts = int(settings.get("tp", 600))
 
-    # Break-even foyda >= TP ning yarmiga yetganda ishga tushadi
-    be_trigger = max(int(tp_pts * 0.5), 1)
+    # Break-even/Trailing qachon boshlanishi — TP ning necha foizida (sozlamadan)
+    # Standart 33% (TP ning uchdan biri). Kichikroq = vaqtliroq ishga tushadi.
+    trigger_pct = float(settings.get("be_pct", 33)) / 100.0
+    if trigger_pct <= 0:
+        trigger_pct = 0.33
+
+    # Break-even foyda >= TP ning trigger_pct qismiga yetganda ishga tushadi
+    be_trigger = max(int(tp_pts * trigger_pct), 1)
     # Break-even qulflanadigan kichik bufer (spread + zaxira)
     spread = getattr(info, "spread", 0) or 0
     be_lock = spread + 5
-    # Trailing foyda >= TP ning yarmiga yetganda boshlanadi, masofa = SL
-    trail_start = max(int(tp_pts * 0.5), 1)
+    # Trailing ham o'sha nuqtada boshlanadi, masofa = SL
+    trail_start = max(int(tp_pts * trigger_pct), 1)
     trail_dist = max(sl_pts, spread + 10)
 
     positions = mt5.positions_get(symbol=symbol) or []

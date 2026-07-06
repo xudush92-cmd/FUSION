@@ -80,6 +80,7 @@ def build_settings_text(settings: dict) -> str:
         f"🛑 Kunlik zarar limiti: {dl_txt}\n"
         f"🔒 Break-even: {onoff('breakeven')}\n"
         f"📉 Trailing Stop: {onoff('trailing')}\n"
+        f"⏱ BE/Trailing boshlanishi: TP ning {int(settings.get('be_pct', 33))}%\n"
         f"🔄 Yo'nalish o'zgarsa foydani yop: {onoff('close_profit_reverse')}\n"
         f"🖐 Qo'lda ochilganga SL/TP: {onoff('manage_manual')}"
     )
@@ -702,6 +703,7 @@ async def user_change_setting(callback: CallbackQuery, state: FSMContext):
         "risk": "Yangi Risk (%, masalan: 1.5)",
         "max_pos": "Bir vaqtda maks. savdo soni (masalan: 3)",
         "daily_loss": "Kunlik zarar limiti % (0=o'chiq, masalan: 5)",
+        "be_pct": "BE/Trailing boshlanishi TP ning necha % ida (masalan: 25)",
     }
     await state.update_data(setting_param=param)
     await callback.message.edit_text(f"✏️ {labels.get(param, param)} qiymatini kiriting:")
@@ -731,6 +733,7 @@ async def user_set_value(message: Message, state: FSMContext):
         "risk": (0.1, 50.0, "Risk 0.1% dan 50% gacha"),
         "max_pos": (1, 10, "Maks. savdo soni 1 dan 10 gacha"),
         "daily_loss": (0, 90, "Kunlik zarar limiti 0 dan 90% gacha (0=o'chiq)"),
+        "be_pct": (5, 90, "BE/Trailing boshlanishi 5% dan 90% gacha"),
     }
 
     if param in limits:
@@ -739,8 +742,8 @@ async def user_set_value(message: Message, state: FSMContext):
             await message.answer(f"⚠️ {hint}. Qayta kiriting:")
             return
 
-    # max_pos butun son sifatida saqlanadi
-    if param == "max_pos":
+    # Butun son sifatida saqlanadigan sozlamalar
+    if param in ("max_pos", "be_pct"):
         value = int(value)
 
     await state.clear()

@@ -81,6 +81,7 @@ def build_settings_text(settings: dict) -> str:
         f"🔒 Break-even: {onoff('breakeven')}\n"
         f"📉 Trailing Stop: {onoff('trailing')}\n"
         f"⏱ BE/Trailing boshlanishi: TP ning {int(settings.get('be_pct', 33))}%\n"
+        f"📏 Trailing masofasi: {('avto (SL)' if int(settings.get('trail_dist', 0)) == 0 else str(int(settings.get('trail_dist', 0))) + ' punkt')}\n"
         f"🔄 Yo'nalish o'zgarsa foydani yop: {onoff('close_profit_reverse')}\n"
         f"🖐 Qo'lda ochilganga SL/TP: {onoff('manage_manual')}"
     )
@@ -704,6 +705,7 @@ async def user_change_setting(callback: CallbackQuery, state: FSMContext):
         "max_pos": "Bir vaqtda maks. savdo soni (masalan: 3)",
         "daily_loss": "Kunlik zarar limiti % (0=o'chiq, masalan: 5)",
         "be_pct": "BE/Trailing boshlanishi TP ning necha % ida (masalan: 25)",
+        "trail_dist": "Trailing masofasi punkt (0=avto/SL, masalan: 3000)",
     }
     await state.update_data(setting_param=param)
     await callback.message.edit_text(f"✏️ {labels.get(param, param)} qiymatini kiriting:")
@@ -734,6 +736,7 @@ async def user_set_value(message: Message, state: FSMContext):
         "max_pos": (1, 10, "Maks. savdo soni 1 dan 10 gacha"),
         "daily_loss": (0, 90, "Kunlik zarar limiti 0 dan 90% gacha (0=o'chiq)"),
         "be_pct": (5, 90, "BE/Trailing boshlanishi 5% dan 90% gacha"),
+        "trail_dist": (0, 100000, "Trailing masofasi 0 (avto) yoki 50-100000 punkt"),
     }
 
     if param in limits:
@@ -743,7 +746,7 @@ async def user_set_value(message: Message, state: FSMContext):
             return
 
     # Butun son sifatida saqlanadigan sozlamalar
-    if param in ("max_pos", "be_pct"):
+    if param in ("max_pos", "be_pct", "trail_dist"):
         value = int(value)
 
     await state.clear()

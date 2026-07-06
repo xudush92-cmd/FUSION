@@ -424,9 +424,15 @@ def _manage_open_positions(symbol: str, settings: dict) -> list:
     # Break-even qulflanadigan kichik bufer (spread + zaxira)
     spread = getattr(info, "spread", 0) or 0
     be_lock = spread + 5
-    # Trailing ham o'sha nuqtada boshlanadi, masofa = SL
+    # Trailing ham o'sha nuqtada boshlanadi
     trail_start = max(int(tp_pts * trigger_pct), 1)
-    trail_dist = max(sl_pts, spread + 10)
+    # Trailing masofasi (SL narxdan qancha orqada tursin) — sozlamadan.
+    # 0 bo'lsa standart = SL masofasi. Kattaroq = SL narxdan uzoqroq (bo'shroq).
+    user_trail = int(settings.get("trail_dist", 0))
+    if user_trail > 0:
+        trail_dist = max(user_trail, spread + 10)
+    else:
+        trail_dist = max(sl_pts, spread + 10)
 
     positions = mt5.positions_get(symbol=symbol) or []
     mine = [p for p in positions if p.magic == MAGIC]

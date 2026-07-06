@@ -11,6 +11,7 @@ savdo tsikli har bir foydalanuvchi uchun navbat bilan ishlaydi
 """
 import logging
 import time
+import datetime
 import numpy as np
 import MetaTrader5 as mt5
 
@@ -38,6 +39,11 @@ _last_bar: dict = {}
 # Bir xil xato xabarini takror yubormaslik uchun (user_id -> (xabar, vaqt))
 _last_error: dict = {}
 ERROR_REPEAT_SEC = 600  # bir xil xato 10 daqiqada bir marta xabar qilinadi
+
+# Kunlik zarar limiti uchun: user_id -> (sana, kun boshidagi equity)
+_day_start: dict = {}
+# Kunlik limit haqida bir marta xabar berish uchun: user_id -> sana
+_daily_halt_notified: dict = {}
 
 
 # ==================================================================
@@ -385,6 +391,120 @@ def _ensure_sltp(symbol: str, sl_pts: int, tp_pts: int, manage_manual: bool = Fa
     return fixed
 
 
+def _manage_open_positions(symbol: str, settings: dict) -> list:
+    """
+    Ochiq savdolar uchun Break-even va Trailing Stop ni qo'llash.
+    Faqat robot savdolariga (MAGIC) ta'sir qiladi.
+    Qaytaradi: xabarlar ro'yxati.
+    """
+    events = []
+    use_be = bool(settings.get("breakeven", False))
+    use_trail = bool(settings.get("trailing", False))
+    if not use_be and not use_trail:
+        return events
+
+    info = mt5.symbol_info(symbol)
+    tick = mt5.symbol_info_tick(symbol)
+    if info is None or tick is None:
+        return events
+    point = info.point
+    digits = info.digits
+
+    sl_pts = int(settings.get("sl", 300))
+    tp_pts = int(settings.get("tp", 600))
+
+    # Break-even foyda >= TP ning yarmiga yetganda ishga tushadi
+    be_trigger = max(int(tp_pts * 0.5), 1)
+    # Break-even qulflanadigan kichik bufer (spread + zaxira)
+    spread = getattr(info, "spread", 0) or 0
+    be_lock = spread + 5
+    # Trailing foyda >= TP ning yarmiga yetganda boshlanadi, masofa = SL
+    trail_start = max(int(tp_pts * 0.5), 1)
+    trail_dist = max(sl_pts, spread + 10)
+
+    positions = mt5.positions_get(symbol=symbol) or []
+    mine = [p for p in positions if p.magic == MAGIC]
+
+    for pos in mine:
+        is_buy = (pos.type == mt5.POSITION_TYPE_BUY)
+        open_price = pos.price_open
+        cur = tick.bid if is_buy else tick.ask
+        # Joriy foyda (punktda)
+        profit_pts = ((cur - open_price) if is_buy else (open_price - cur)) / point
+        cur_sl = pos.sl
+        new_sl = cur_sl
+
+        # Break-even: SL ni kirish narxiga (+ kichik bufer) surish
+        if use_be and profit_pts >= be_trigger:
+            be_price = (open_price + be_lock * point) if is_buy else (open_price - be_lock * point)
+            be_price = round(be_price, digits)
+            if is_buy and (cur_sl == 0.0 or be_price > cur_sl):
+                new_sl = be_price
+            elif (not is_buy) and (cur_sl == 0.0 or be_price < cur_sl):
+                new_sl = be_price
+
+        # Trailing: SL ni narx orqasidan surish
+        if use_trail and profit_pts >= trail_start:
+            trail_price = (cur - trail_dist * point) if is_buy else (cur + trail_dist * point)
+            trail_price = round(trail_price, digits)
+            if is_buy and trail_price > new_sl:
+                new_sl = trail_price
+            elif (not is_buy) and (new_sl == 0.0 or trail_price < new_sl):
+                new_sl = trail_price
+
+        # O'zgargan bo'lsa — SL ni yangilash
+        if new_sl != cur_sl and new_sl != 0.0:
+            req = {
+                "action": mt5.TRADE_ACTION_SLTP,
+                "symbol": symbol,
+                "position": pos.ticket,
+                "sl": new_sl,
+                "tp": pos.tp,
+                "magic": MAGIC,
+            }
+            result = mt5.order_send(req)
+            if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info(f"SL yangilandi (ticket {pos.ticket}): {cur_sl} -> {new_sl}")
+
+    return events
+
+
+def _check_daily_loss(user_id: int, daily_loss_pct: float) -> tuple[bool, str]:
+    """
+    Kunlik zarar limitini tekshirish.
+    Qaytaradi: (savdoga ruxsat, xabar). Ruxsat False bo'lsa yangi savdo ochilmaydi.
+    """
+    if daily_loss_pct <= 0:
+        return True, ""  # limit o'chirilgan
+
+    acc = mt5.account_info()
+    if acc is None:
+        return True, ""  # ma'lumot yo'q — to'smaymiz
+
+    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    equity = acc.equity
+
+    rec = _day_start.get(user_id)
+    if rec is None or rec[0] != today:
+        # Yangi kun — boshlang'ich equity ni saqlash
+        _day_start[user_id] = (today, equity)
+        _daily_halt_notified.pop(user_id, None)
+        return True, ""
+
+    start_equity = rec[1]
+    if start_equity <= 0:
+        return True, ""
+    loss_pct = (start_equity - equity) / start_equity * 100.0
+    if loss_pct >= daily_loss_pct:
+        # Limit oshdi — savdo to'xtatiladi
+        if _daily_halt_notified.get(user_id) != today:
+            _daily_halt_notified[user_id] = today
+            return False, (f"🛑 Kunlik zarar limiti oshdi ({loss_pct:.1f}% >= {daily_loss_pct}%). "
+                           f"Bugun yangi savdo ochilmaydi. Ertaga qayta boshlanadi.")
+        return False, ""
+    return True, ""
+
+
 def _set_position_sltp(pos, direction, sl_pts, tp_pts, point, digits) -> bool:
     """Berilgan pozitsiyaga SL/TP qo'yish (broker minimal masofa + spread, xatoda qayta urinish)."""
     info = mt5.symbol_info(pos.symbol)
@@ -526,6 +646,15 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
     if fixed:
         events.append(f"🛠 {symbol}: {fixed} ta savdoga SL/TP qo'yildi")
 
+    # HAR TSIKLDA: Break-even va Trailing Stop (ochiq savdolarni himoyalash)
+    _manage_open_positions(symbol, settings)
+
+    # Kunlik zarar limitini tekshirish (himoya)
+    daily_loss_pct = float(settings.get("daily_loss", 0))
+    allow_trade, halt_msg = _check_daily_loss(user["user_id"], daily_loss_pct)
+    if halt_msg:
+        events.append(halt_msg)
+
     rates = mt5.copy_rates_from_pos(symbol, tf, 0, 500)
     if rates is None or len(rates) < 210:
         return events
@@ -555,6 +684,10 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
         return events
 
     if signal is None:
+        return events
+
+    # Kunlik zarar limiti oshgan bo'lsa — yangi savdo ochilmaydi (himoya)
+    if not allow_trade:
         return events
 
     lot = float(settings.get("lot", 0.10))

@@ -77,6 +77,10 @@ def settings_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⚖️ Risk %", callback_data="set:risk")],
         [InlineKeyboardButton(text="🔢 Maks. savdo soni", callback_data="set:max_pos")],
         [InlineKeyboardButton(text="🕐 Timeframe", callback_data="user:timeframe")],
+        [InlineKeyboardButton(text="━━━ HIMOYA ━━━", callback_data="noop")],
+        [InlineKeyboardButton(text="🛑 Kunlik zarar limiti %", callback_data="set:daily_loss")],
+        [InlineKeyboardButton(text="🔒 Break-even (yoq/o'ch)", callback_data="user:toggle_be")],
+        [InlineKeyboardButton(text="📉 Trailing Stop (yoq/o'ch)", callback_data="user:toggle_trail")],
         [InlineKeyboardButton(text="🖐 Qo'lda ochilganga SL/TP", callback_data="user:toggle_manual")],
         [InlineKeyboardButton(text="🔙 Ortga", callback_data="user:menu")],
     ])

@@ -85,6 +85,7 @@ def settings_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📏 Trailing masofasi (punkt)", callback_data="set:trail_dist")],
         [InlineKeyboardButton(text="🔄 Yo'nalish o'zgarsa foydani yop", callback_data="user:toggle_reverse")],
         [InlineKeyboardButton(text="🖐 Qo'lda ochilganga SL/TP", callback_data="user:toggle_manual")],
+        [InlineKeyboardButton(text="🔔 Xabarlar (yoq/o'ch)", callback_data="user:toggle_notify")],
         [InlineKeyboardButton(text="🔙 Ortga", callback_data="user:menu")],
     ])
 

@@ -83,7 +83,8 @@ def build_settings_text(settings: dict) -> str:
         f"⏱ BE/Trailing boshlanishi: TP ning {int(settings.get('be_pct', 33))}%\n"
         f"📏 Trailing masofasi: {('avto (SL)' if int(settings.get('trail_dist', 0)) == 0 else str(int(settings.get('trail_dist', 0))) + ' punkt')}\n"
         f"🔄 Yo'nalish o'zgarsa foydani yop: {onoff('close_profit_reverse')}\n"
-        f"🖐 Qo'lda ochilganga SL/TP: {onoff('manage_manual')}"
+        f"🖐 Qo'lda ochilganga SL/TP: {onoff('manage_manual')}\n"
+        f"🔔 Xabarlar: {'YOQILGAN ✅' if settings.get('notify', True) else 'ochirilgan 🔕'}"
     )
 
 
@@ -606,6 +607,20 @@ async def user_toggle_trail(callback: CallbackQuery):
     await callback.message.edit_text(build_settings_text(settings), reply_markup=settings_kb())
 
 
+@router.callback_query(F.data == "user:toggle_notify")
+async def user_toggle_notify(callback: CallbackQuery):
+    user = await get_active_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    settings = await db.get_settings(user["user_id"])
+    new_val = not bool(settings.get("notify", True))
+    settings["notify"] = new_val
+    await db.set_settings(user["user_id"], settings)
+    await callback.answer(f"Xabarlar: {'YOQILDI ✅' if new_val else 'ochirildi 🔕'}", show_alert=True)
+    await callback.message.edit_text(build_settings_text(settings), reply_markup=settings_kb())
+
+
 @router.callback_query(F.data == "user:toggle_reverse")
 async def user_toggle_reverse(callback: CallbackQuery):
     user = await get_active_user(callback.from_user.id)
@@ -792,12 +807,13 @@ async def trading_loop():
                 except Exception as e:
                     logger.error(f"Savdo tsikli xatosi (user {u['user_id']}): {e}")
                     events = []
-                # Foydalanuvchiga xabar yuborish
-                for msg in events:
-                    try:
-                        await bot.send_message(u["user_id"], msg)
-                    except Exception:
-                        pass
+                # Foydalanuvchiga xabar yuborish (agar xabarlar yoqilgan bo'lsa)
+                if settings.get("notify", True):
+                    for msg in events:
+                        try:
+                            await bot.send_message(u["user_id"], msg)
+                        except Exception:
+                            pass
         except Exception as e:
             logger.error(f"Savdo tsikli umumiy xatosi: {e}")
         await asyncio.sleep(TRADING_POLL_SEC)

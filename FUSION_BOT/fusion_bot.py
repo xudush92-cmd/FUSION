@@ -67,6 +67,8 @@ def build_settings_text(settings: dict) -> str:
         return "YOQILGAN ✅" if settings.get(key, False) else "o'chirilgan"
     dl = settings.get("daily_loss", 0)
     dl_txt = f"{dl}%" if dl and float(dl) > 0 else "o'chirilgan"
+    cau = settings.get("close_at_usd", 0)
+    cau_txt = f"${cau}" if cau and float(cau) > 0 else "o'chirilgan"
     return (
         "⚙️ Sozlamalar:\n\n"
         f"💱 Juftlik: {settings.get('symbol', 'grafikdagi')}\n"
@@ -76,6 +78,9 @@ def build_settings_text(settings: dict) -> str:
         f"⚖️ Risk: {settings.get('risk', 1.0)}%\n"
         f"🔢 Maks. savdo soni: {int(settings.get('max_pos', 1))}\n"
         f"🕐 Timeframe: {settings.get('timeframe', 'M5')}\n"
+        "\n— Qo'lda savdo yordamchisi —\n"
+        f"💰 Foyda maqsadi (yop): {cau_txt}\n"
+        f"✋ Faqat yopish rejimi: {onoff('only_close')}\n"
         "\n— Himoya —\n"
         f"🛑 Kunlik zarar limiti: {dl_txt}\n"
         f"🔒 Break-even: {onoff('breakeven')}\n"
@@ -607,6 +612,23 @@ async def user_toggle_trail(callback: CallbackQuery):
     await callback.message.edit_text(build_settings_text(settings), reply_markup=settings_kb())
 
 
+@router.callback_query(F.data == "user:toggle_onlyclose")
+async def user_toggle_onlyclose(callback: CallbackQuery):
+    user = await get_active_user(callback.from_user.id)
+    if not user:
+        await callback.answer("⛔ Ruxsat yo'q", show_alert=True)
+        return
+    settings = await db.get_settings(user["user_id"])
+    new_val = not bool(settings.get("only_close", False))
+    settings["only_close"] = new_val
+    await db.set_settings(user["user_id"], settings)
+    await callback.answer(
+        f"Faqat yopish rejimi: {'YOQILDI ✅ (robot yangi savdo ochmaydi)' if new_val else 'ochirildi'}",
+        show_alert=True
+    )
+    await callback.message.edit_text(build_settings_text(settings), reply_markup=settings_kb())
+
+
 @router.callback_query(F.data == "user:toggle_notify")
 async def user_toggle_notify(callback: CallbackQuery):
     user = await get_active_user(callback.from_user.id)
@@ -721,6 +743,7 @@ async def user_change_setting(callback: CallbackQuery, state: FSMContext):
         "daily_loss": "Kunlik zarar limiti % (0=o'chiq, masalan: 5)",
         "be_pct": "BE/Trailing boshlanishi TP ning necha % ida (masalan: 25)",
         "trail_dist": "Trailing masofasi punkt (0=avto/SL, masalan: 3000)",
+        "close_at_usd": "Foyda maqsadi $ (savdo shu foydaga yetsa yopiladi, masalan: 1)",
     }
     await state.update_data(setting_param=param)
     await callback.message.edit_text(f"✏️ {labels.get(param, param)} qiymatini kiriting:")
@@ -752,6 +775,7 @@ async def user_set_value(message: Message, state: FSMContext):
         "daily_loss": (0, 90, "Kunlik zarar limiti 0 dan 90% gacha (0=o'chiq)"),
         "be_pct": (5, 90, "BE/Trailing boshlanishi 5% dan 90% gacha"),
         "trail_dist": (0, 100000, "Trailing masofasi 0 (avto) yoki 50-100000 punkt"),
+        "close_at_usd": (0, 100000, "Foyda maqsadi $ (0=o'chiq, masalan: 1)"),
     }
 
     if param in limits:

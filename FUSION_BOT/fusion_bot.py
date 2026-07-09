@@ -808,7 +808,7 @@ async def user_set_value(message: Message, state: FSMContext):
 # ============================================================
 
 # Savdo tsikli oralig'i (soniya) — har necha soniyada bozor tekshiriladi
-TRADING_POLL_SEC = 15
+TRADING_POLL_SEC = 5
 
 
 async def trading_loop():

@@ -483,10 +483,12 @@ def _manage_open_positions(symbol: str, settings: dict) -> list:
 
 def _auto_close_by_profit(target_usd: float) -> list:
     """
-    Foyda maqsadi: HAR QANDAY ochiq savdo (qo'lda yoki robot) foydasi
-    target_usd ($) ga yetsa — avtomatik yopadi.
-    Barcha juftliklardagi savdolarni tekshiradi.
-    Qaytaradi: xabarlar ro'yxati.
+    Foyda maqsadi: HAR QANDAY ochiq savdo (qo'lda yoki robot) target_usd ($) ga yetsa yopiladi.
+
+    Ikki bosqichli (tez ishlashi uchun):
+    1) Agar foyda allaqachon maqsadga yetgan bo'lsa — DARHOL yopadi.
+    2) Aks holda — maqsadga mos TP narxini hisoblab, savdoga qo'yadi.
+       Shunda BROKER serverida darrov yopiladi (robot kutmaydi, kechikish yo'q).
     """
     events = []
     if target_usd <= 0:
@@ -494,10 +496,46 @@ def _auto_close_by_profit(target_usd: float) -> list:
     positions = mt5.positions_get()  # hamma juftlik, hamma savdo
     if not positions:
         return events
+
     for p in positions:
+        # 1) Allaqachon maqsadga yetgan bo'lsa — darhol yopish
         if p.profit >= target_usd:
             _close_position(p)
             events.append(f"💰 {p.symbol} yopildi: foyda ${p.profit:.2f} (maqsad ${target_usd})")
+            continue
+
+        # 2) Maqsadga mos TP narxini hisoblab qo'yish (broker o'zi yopadi)
+        info = mt5.symbol_info(p.symbol)
+        if info is None:
+            continue
+        tick_value = getattr(info, "trade_tick_value", 0) or 0
+        tick_size = getattr(info, "trade_tick_size", 0) or 0
+        digits = info.digits
+        if tick_value <= 0 or tick_size <= 0 or p.volume <= 0:
+            continue
+        # target_usd foyda uchun kerakli narx masofasi
+        price_move = target_usd * tick_size / (tick_value * p.volume)
+        if p.type == mt5.POSITION_TYPE_BUY:
+            tp_price = round(p.price_open + price_move, digits)
+        else:
+            tp_price = round(p.price_open - price_move, digits)
+
+        # TP allaqachon shu qiymatga yaqin bo'lsa — qayta qo'ymaymiz
+        if abs((p.tp or 0) - tp_price) <= tick_size:
+            continue
+
+        req = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "symbol": p.symbol,
+            "position": p.ticket,
+            "sl": p.sl,
+            "tp": tp_price,
+            "magic": MAGIC,
+        }
+        result = mt5.order_send(req)
+        if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
+            logger.info(f"Foyda TP qo'yildi (ticket {p.ticket}): {tp_price} (${target_usd})")
+
     return events
 
 

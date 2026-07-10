@@ -481,25 +481,6 @@ def _manage_open_positions(symbol: str, settings: dict) -> list:
     return events
 
 
-def _auto_close_by_profit(target_usd: float) -> list:
-    """
-    Foyda maqsadi: HAR QANDAY ochiq savdo (qo'lda yoki robot) foydasi
-    target_usd ($) ga yetsa — robot yopadi (har 5 soniyada tekshiriladi).
-    Barcha juftliklardagi savdolarni tekshiradi.
-    """
-    events = []
-    if target_usd <= 0:
-        return events
-    positions = mt5.positions_get()  # hamma juftlik, hamma savdo
-    if not positions:
-        return events
-    for p in positions:
-        if p.profit >= target_usd:
-            _close_position(p)
-            events.append(f"💰 {p.symbol} yopildi: foyda ${p.profit:.2f} (maqsad ${target_usd})")
-    return events
-
-
 def _check_daily_loss(user_id: int, daily_loss_pct: float) -> tuple[bool, str]:
     """
     Kunlik zarar limitini tekshirish.
@@ -655,15 +636,6 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
     ok, err = mt5_bridge.login_account(login, server, password)
     if not ok:
         logger.warning(f"User {user['user_id']}: MT5 ulanish xatosi: {err}")
-        return events
-
-    # MUSTAQIL FUNKSIYA: Foyda maqsadi ($) — har qanday savdoni foydaga yetsa yopish
-    close_at_usd = float(settings.get("close_at_usd", 0))
-    if close_at_usd > 0:
-        events.extend(_auto_close_by_profit(close_at_usd))
-
-    # Faqat yopish rejimi — robot yangi savdo ochmaydi, faqat yuqoridagi ishni qiladi
-    if bool(settings.get("only_close", False)):
         return events
 
     requested = settings.get("symbol") or "EURUSD"

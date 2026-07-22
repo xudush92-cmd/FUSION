@@ -1,0 +1,15 @@
+; FUSION EA - Tayyor strategiya: Scalp Stochastic
+; Stoch(5)<15 -> BUY, Stoch(5)>85 -> SELL. M1/M5 uchun.
+InpStrategyMode=0
+InpPreset=9
+InpEntryTF=5
+InpOnePerBar=true
+InpLotMode=0
+InpFixedLot=0.10
+InpSLMode=0
+InpStopLossPoints=100
+InpTakeProfitPoints=150
+InpUseTrailing=false
+InpUseBreakEven=false
+InpExitMode=0
+InpMaxPositions=1

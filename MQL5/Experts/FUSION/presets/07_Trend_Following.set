@@ -13,3 +13,8 @@ InpUseTrailing=true
 InpTrailingStart=300
 InpTrailingStep=200
 InpMaxPositions=1
+
+InpSLMode=0
+InpUseBreakEven=false
+InpExitMode=0
+InpOnePerBar=true

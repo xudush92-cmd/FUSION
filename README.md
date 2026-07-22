@@ -4,7 +4,7 @@
 
 FUSION — MetaTrader 5 (kompyuter / Windows) uchun **to'liq sozlanadigan** savdo roboti (Expert Advisor). **Ikki xil ishlash rejimi** bor:
 
-1. **PRESET** — 7 ta **tayyor strategiya**dan birini tanlab, bir zumda ishga tushirish
+1. **PRESET** — 10 ta **tayyor strategiya**dan birini tanlab, bir zumda ishga tushirish
 2. **CUSTOM** — trader **o'zi qoida quradi** (indikator + operator + qiymat)
 
 > ⚠️ **Ogohlantirish:** Avtomatik savdo katta moliyaviy risk bilan bog'liq. Hech qanday robot foyda kafolatlamaydi. Avval **demo hisobda** va **Strategy Tester**da sinab ko'ring.
@@ -24,10 +24,15 @@ Asosiy parametrlar (davr, daraja) ham **sozlanadi**.
 | 0 | **RSI Reversal** | RSI < 30 → BUY, RSI > 70 → SELL |
 | 1 | **MA Crossover** | Tez MA sekin MA ni kesib o'tsa |
 | 2 | **MACD Crossover** | MACD main signal'ni kesib o'tsa |
-| 3 | **Bollinger Bounce** | Narx pastki/yuqori chiziqqa tegsa |
+| 3 | **Bollinger Bounce** | Narx band tashqarisidan diapazon ichiga qaytsa |
 | 4 | **Stochastic** | Stoch < 20 → BUY, > 80 → SELL |
 | 5 | **CCI** | CCI < -100 → BUY, > 100 → SELL |
 | 6 | **Trend Following** | Narx MA dan yuqori/past + ADX > 25 |
+| 7 | **Scalp RSI** | RSI(7) < 25 → BUY, > 75 → SELL |
+| 8 | **Scalp MA** | EMA(5) EMA(20) ni kesib o'tsa |
+| 9 | **Scalp Stochastic** | Stoch(5) < 15 → BUY, > 85 → SELL |
+
+Barcha signallar **oxirgi yopilgan bar** bo'yicha hisoblanadi. Kesishuv strategiyalari undan oldingi yopilgan bar bilan taqqoslanadi; tugallanmagan joriy sham signalga kiritilmaydi.
 
 ### 🅱️ CUSTOM — o'zi qoida quradi
 Robot — bu "ijrochi". Trader nima desa, shuni qiladi:
@@ -116,6 +121,17 @@ Har bir BUY/SELL shart sloti quyidagilardan iborat:
 - **LOT_FIXED** — har savdoda qat'iy lot
 - **LOT_RISK_PERCENT** — balansning belgilangan %i risk qilinadi (SL masofasiga qarab lot avtomatik hisoblanadi)
 - **Himoya:** kunlik zarar limiti, kunlik foyda maqsadi, umumiy drawdown limiti — yetilganda robot to'xtaydi
+
+---
+
+## Telegram bot bilan ishlatish
+
+Bot konfiguratsiyasidagi `TRADING_ENGINE` faqat bitta savdo dvigatelini tanlaydi:
+
+- `TRADING_ENGINE=PYTHON` — standart va tavsiya etilgan; `trader.py` savdo qiladi, EA bridge avtomatik o'chiriladi.
+- `TRADING_ENGINE=EA` — `FUSION.mq5` savdo qiladi, Python background savdo tsikli ishga tushmaydi.
+
+Python va EA dvigatellarini bir vaqtda yoqish bir signal uchun takroriy pozitsiya ochishi mumkin, shuning uchun bot bunga ruxsat bermaydi.
 
 ---
 

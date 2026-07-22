@@ -10,3 +10,9 @@ InpFixedLot=0.10
 InpStopLossPoints=300
 InpTakeProfitPoints=500
 InpMaxPositions=1
+
+InpSLMode=0
+InpUseTrailing=false
+InpUseBreakEven=false
+InpExitMode=0
+InpOnePerBar=true

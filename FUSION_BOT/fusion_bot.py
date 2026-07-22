@@ -10,7 +10,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from config import BOT_TOKEN, ADMIN_IDS
+from config import BOT_TOKEN, ADMIN_IDS, TRADING_ENGINE
 import database as db
 import mt5_bridge
 import ea_bridge
@@ -87,18 +87,28 @@ def build_settings_text(settings: dict) -> str:
     )
 
 
-async def sync_user_to_ea(user: dict) -> None:
-    """Foydalanuvchi sozlamalarini EA buyruq fayliga yozish (fayl bridge)."""
+async def sync_user_to_ea(user: dict) -> bool:
+    """EA bridge holatini tanlangan savdo dvigateliga moslaydi.
+
+    PYTHON rejimida EA doim o'chiriladi; EA rejimida esa foydalanuvchining
+    START/STOP holati uzatiladi. Natija False bo'lsa Python shu hisobda
+    savdo qilmaydi — guard yozilmagan holatda fail-open bo'lmaydi.
+    """
     if not user or not user.get("mt5_login"):
-        return
+        return True
     settings = await db.get_settings(user["user_id"])
-    running = bool(user.get("robot_running"))
+    running = bool(user.get("robot_running")) if TRADING_ENGINE == "EA" else False
     ok, err = await asyncio.to_thread(
         ea_bridge.write_command,
-        user["mt5_login"], running, user.get("strategy", "RSI_REVERSAL"), settings
+        user["mt5_login"],
+        running,
+        user.get("strategy", "RSI_REVERSAL"),
+        settings,
+        TRADING_ENGINE,
     )
     if not ok:
         logger.warning(f"EA sinxronlash xatosi (user {user['user_id']}): {err}")
+    return ok
 
 
 # noop — bo'sh callback (ajratuvchi chiziq uchun)
@@ -137,7 +147,7 @@ async def cmd_start(message: Message):
                 f"Robot: {'🟢 Ishlayapti' if user['robot_running'] else '🔴 Toxtatilgan'}\n\n"
                 "Boshqarish:",
                 reply_markup=user_menu_kb(),
-    
+
             )
         else:
             await message.answer(
@@ -797,6 +807,16 @@ async def trading_loop():
             for u in users:
                 if not u.get("robot_running") or not u.get("mt5_login"):
                     continue
+
+                # Python savdo qilishidan oldin EA uchun engine=PYTHON guard
+                # muvaffaqiyatli yozilgan bo'lishi shart. Yozilmasa shu hisob
+                # fail-safe tarzda o'tkazib yuboriladi.
+                if not await sync_user_to_ea(u):
+                    logger.error(
+                        f"User {u['user_id']}: EA guard yozilmadi, Python savdosi bloklandi"
+                    )
+                    continue
+
                 settings = await db.get_settings(u["user_id"])
                 # MT5 operatsiyalari lock ostida, alohida thread da
                 try:
@@ -830,8 +850,18 @@ async def main():
 
     dp.include_router(router)
 
-    # Savdo tsiklini fon rejimida ishga tushirish
-    asyncio.create_task(trading_loop())
+    # Barcha mavjud foydalanuvchilar bridge holatini tanlangan dvigatelga
+    # moslashtiradi. PYTHON rejimida bu eski enabled=1 fayllarni ham o'chiradi.
+    users = await db.get_all_users()
+    for user in users:
+        await sync_user_to_ea(user)
+
+    # Bir vaqtning o'zida faqat bitta savdo dvigateli ishlaydi.
+    if TRADING_ENGINE == "PYTHON":
+        asyncio.create_task(trading_loop())
+        logger.info("Savdo dvigateli: PYTHON")
+    else:
+        logger.info("Savdo dvigateli: EA (Python trading_loop ishga tushirilmadi)")
 
     logger.info("FUSION Bot ishga tushdi...")
     await dp.start_polling(bot)

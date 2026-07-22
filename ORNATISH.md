@@ -81,8 +81,9 @@ Grafik o'ng burchakda jilmaygan yuz belgisi chiqsa — robot ishlayapti!
 
 FUSION'da **Inputs -> "0. STRATEGIYA REJIMI"** bo'limida tanlaysiz:
 
-- **PRESET** (tavsiya, oson): `InpPreset` dan tayyor strategiya tanlang
-  (RSI, MA Crossover, MACD, Bollinger, Stochastic, CCI, Trend Following)
+- **PRESET** (tavsiya, oson): `InpPreset` dan 10 ta tayyor strategiyadan birini tanlang
+  (RSI, MA Crossover, MACD, Bollinger, Stochastic, CCI, Trend Following,
+  Scalp RSI, Scalp MA, Scalp Stochastic)
 - **CUSTOM**: o'zingiz BUY/SELL shartlarini qurasiz (8 va 9-bo'limlar)
 
 Eng oson yo'l — `presets/` papkasidagi tayyor `.set` fayllardan birini **Load** qilish.

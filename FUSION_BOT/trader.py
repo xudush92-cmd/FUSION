@@ -216,8 +216,10 @@ def compute_signal(strategy: str, rates) -> str | None:
 
     elif strategy == "BOLLINGER_BOUNCE":
         up, lo = bollinger(close, 20, 2.0)
-        if close[c] < lo[c]: return "BUY"
-        if close[c] > up[c]: return "SELL"
+        # Haqiqiy bounce/re-entry: oldingi yopilgan bar band tashqarisida,
+        # oxirgi yopilgan bar esa diapazon ichiga qaytgan bo'lishi kerak.
+        if close[p] <= lo[p] and close[c] > lo[c]: return "BUY"
+        if close[p] >= up[p] and close[c] < up[c]: return "SELL"
 
     elif strategy == "STOCHASTIC":
         k = stochastic_k(high, low, close, 5, 3)

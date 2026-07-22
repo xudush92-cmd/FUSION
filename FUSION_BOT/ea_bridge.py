@@ -24,13 +24,26 @@ def _bridge_file_path(login: int) -> str:
     return os.path.join(common_files_dir(), f"FUSION_{login}.txt")
 
 
-def write_command(login: int, running: bool, strategy: str, settings: dict) -> tuple[bool, str]:
+def write_command(
+    login: int,
+    running: bool,
+    strategy: str,
+    settings: dict,
+    engine: str = "PYTHON",
+) -> tuple[bool, str]:
     """
-    EA uchun buyruq faylini yozish.
-    Qaytaradi: (muvaffaqiyat, xato_xabari)
+    EA uchun buyruq faylini atomik yozish.
+    Qaytaradi: (muvaffaqiyat, xato_xabari).
+
+    engine=PYTHON bo'lsa EA InpUseBotControl o'chirilgan bo'lsa ham
+    savdoni bloklaydi; engine=EA bo'lsa odatdagi enabled holatini qo'llaydi.
     """
     if not login:
         return False, "MT5 login yo'q"
+
+    engine = engine.strip().upper()
+    if engine not in {"PYTHON", "EA"}:
+        return False, "Savdo dvigateli faqat PYTHON yoki EA bo'lishi mumkin"
 
     directory = common_files_dir()
     try:
@@ -40,6 +53,7 @@ def write_command(login: int, running: bool, strategy: str, settings: dict) -> t
         return False, f"Papka xatosi: {e}"
 
     lines = [
+        f"engine={engine}",
         f"enabled={1 if running else 0}",
         f"strategy={strategy}",
         f"symbol={settings.get('symbol', '')}",
@@ -52,12 +66,21 @@ def write_command(login: int, running: bool, strategy: str, settings: dict) -> t
     content = "\n".join(lines) + "\n"
 
     path = _bridge_file_path(login)
+    temp_path = f"{path}.tmp"
     try:
-        with open(path, "w", encoding="utf-8") as f:
+        with open(temp_path, "w", encoding="utf-8") as f:
             f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
         logger.info(f"EA buyruq fayli yozildi: {path}")
         return True, ""
     except Exception as e:
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except OSError:
+            pass
         logger.error(f"EA buyruq faylini yozib bo'lmadi: {e}")
         return False, f"Fayl yozish xatosi: {e}"
 

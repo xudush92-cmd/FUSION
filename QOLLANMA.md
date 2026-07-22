@@ -11,7 +11,7 @@ FUSION — Telegram bot orqali boshqariladigan avtomatik savdo roboti.
 Robot MT5 (MetaTrader 5) ga ulanadi, narx ma'lumotlarini oladi, indikatorlarni
 hisoblaydi va strategiya sharti bajarilса savdo ochadi.
 
-**Savdo tsikli (har 15 soniyada takrorlanadi):**
+**Savdo tsikli (har 5 soniyada takrorlanadi):**
 
 1. MT5 dan oxirgi 500 ta shamni (bar) oladi
 2. Tanlangan strategiya indikatorini hisoblaydi
@@ -25,6 +25,15 @@ hisoblaydi va strategiya sharti bajarilса savdo ochadi.
 - Bir vaqtda "Maks. savdo soni" gacha savdo ochiladi
 - Ochiq savdo SL/TP ga yetguncha yopilmaydi
 - Har savdo o'z yakuniga yetadi (qarama-qarshi signalda yopilmaydi)
+
+### Savdo dvigatelini tanlash
+
+`.env` faylidagi `TRADING_ENGINE` faqat bitta dvigatelni yoqadi:
+
+- `PYTHON` — standart; botning `trader.py` moduli savdo qiladi va MQL5 EA bridge o'chiriladi.
+- `EA` — MT5 chartidagi `FUSION.mq5` savdo qiladi va Python savdo tsikli ishga tushmaydi.
+
+Ikkala dvigatelni parallel ishlatish takroriy savdo ochishi mumkin. Bot startup vaqtida tanlanmagan dvigatelni avtomatik o'chiradi.
 
 ---
 
@@ -85,7 +94,9 @@ Narx ko'tarilsa BUY, tushsa SELL. Kuchli harakat yo'nalishini kuzatadi.
 
 ### Bollinger Bands
 - **Nima:** Narx atrofida yuqori/pastki chegara chiziqlari
-- **Signal:** Narx pastki chiziqdan past → BUY, yuqori chiziqdan yuqori → SELL
+- **Signal:** oldingi yopilgan bar band tashqarisida bo'lib, oxirgi yopilgan bar diapazon ichiga qaytsa signal beradi
+  - pastki banddan ichkariga qaytish → BUY
+  - yuqori banddan ichkariga qaytish → SELL
 - **Turi:** Reversal (mean reversion)
 - **Mos timeframe:** M15, M30, H1
 
@@ -100,7 +111,7 @@ Narx ko'tarilsa BUY, tushsa SELL. Kuchli harakat yo'nalishini kuzatadi.
 | MA Crossover | EMA(50/200) | tez yuqoriga kesса | tez pastga kesса | Trend | H1-D1 |
 | Skalp MA | EMA(5/20) | tez yuqoriga kesса | tez pastga kesса | Trend | M1, M5 |
 | MACD Cross | MACD(12,26,9) | main signalni yuqoriga | main signalni pastga | Trend | M15-H4 |
-| Bollinger Bounce | BB(20) | narx pastki chiziqda | narx yuqori chiziqda | Reversal | M15-H1 |
+| Bollinger Bounce | BB(20) | pastki banddan ichkariga qaytish | yuqori banddan ichkariga qaytish | Reversal | M15-H1 |
 | Stochastic | Stoch(5) | < 20 | > 80 | Reversal | M5-M30 |
 | Skalp Stochastic | Stoch(5) | < 15 | > 85 | Reversal | M1, M5 |
 | CCI | CCI(14) | < -100 | > +100 | Reversal | M15-H1 |

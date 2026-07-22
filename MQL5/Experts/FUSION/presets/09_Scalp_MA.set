@@ -1,0 +1,15 @@
+; FUSION EA - Tayyor strategiya: Scalp MA
+; EMA(5) EMA(20) ni kesib o'tsa savdo. M1/M5 uchun.
+InpStrategyMode=0
+InpPreset=8
+InpEntryTF=5
+InpOnePerBar=true
+InpLotMode=0
+InpFixedLot=0.10
+InpSLMode=0
+InpStopLossPoints=120
+InpTakeProfitPoints=180
+InpUseTrailing=false
+InpUseBreakEven=false
+InpExitMode=0
+InpMaxPositions=1

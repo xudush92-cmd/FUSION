@@ -23,7 +23,7 @@ STRATEGIES = {
     "RSI_REVERSAL":      "RSI Reversal (RSI<30 BUY, >70 SELL)",
     "MA_CROSSOVER":      "MA Crossover (tez/sekin MA kesishuvi)",
     "MACD_CROSS":        "MACD Crossover (main/signal kesishuvi)",
-    "BOLLINGER_BOUNCE":  "Bollinger Bounce (chiziqqa tegish)",
+    "BOLLINGER_BOUNCE":  "Bollinger Bounce (band tashqarisidan ichkariga qaytish)",
     "STOCHASTIC":        "Stochastic (<20 BUY, >80 SELL)",
     "CCI":               "CCI (<-100 BUY, >100 SELL)",
     "TREND_FOLLOWING":   "Trend Following (MA + ADX filtri)",

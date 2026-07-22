@@ -7,7 +7,7 @@
 #property link      ""
 #property version   "2.00"
 #property description "FUSION - to'liq sozlanadigan MT5 robot. 2 rejim:"
-#property description "PRESET (7 tayyor strategiya) yoki CUSTOM (trader o'zi qoida quradi)."
+#property description "PRESET (10 tayyor strategiya) yoki CUSTOM (trader o'zi qoida quradi)."
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -95,7 +95,7 @@ enum ENUM_PRESET
    PRESET_RSI_REVERSAL = 0, // RSI reversal (RSI<30 BUY, >70 SELL)
    PRESET_MA_CROSSOVER,     // MA crossover (tez/sekin MA kesishuvi)
    PRESET_MACD_CROSS,       // MACD crossover (main/signal kesishuvi)
-   PRESET_BOLLINGER_BOUNCE, // Bollinger bounce (chiziqqa tegish)
+   PRESET_BOLLINGER_BOUNCE, // Bollinger bounce (band ichiga qaytish)
    PRESET_STOCHASTIC,       // Stochastic (oversold/overbought)
    PRESET_CCI,              // CCI (-100/+100)
    PRESET_TREND_FOLLOWING,  // Trend following (MA yo'nalishi + ADX filtri)
@@ -319,6 +319,7 @@ string          g_symbol;         // savdo juftligi (grafik yoki bot tanlaydi)
 
 //--- Bot boshqaruvi (fayl bridge) override qiymatlari ---
 bool            g_botEnabled = true;   // bot ruxsat berganmi (savdo ochish)
+bool            g_engineAllowsEA = true; // bridge engine=PYTHON bo'lsa false
 double          g_ovLot;               // lot (bot yoki input)
 int             g_ovSL;                // stop loss punkt
 int             g_ovTP;                // take profit punkt
@@ -424,14 +425,15 @@ int OnInit()
    g_ovTF     = g_tf;
    g_botEnabled = true;
 
-   // Bot boshqaruvi yoqilgan bo'lsa — faylni o'qish va timer o'rnatish
+   // Engine guard har doim kuzatiladi. InpUseBotControl=false bo'lsa ham
+   // engine=PYTHON buyrug'i EA va Python parallel savdosini bloklaydi.
+   ReadBridgeFile();
+   int poll = (InpBotPollSec < 1) ? 1 : InpBotPollSec;
+   EventSetTimer(poll);
    if(InpUseBotControl)
-   {
-      ReadBridgeFile();
-      int poll = (InpBotPollSec < 1) ? 1 : InpBotPollSec;
-      EventSetTimer(poll);
       Print("FUSION: Bot boshqaruvi YOQILGAN (fayl bridge)");
-   }
+   else
+      Print("FUSION: Standalone EA; engine guard kuzatilmoqda");
 
    Print("FUSION EA ishga tushdi. Symbol=", g_symbol, " TF=", EnumToString(g_tf));
    return(INIT_SUCCEEDED);
@@ -439,8 +441,7 @@ int OnInit()
 
 void OnDeinit(const int reason)
 {
-   if(InpUseBotControl)
-      EventKillTimer();
+   EventKillTimer();
    ClearHandleCache();
 }
 
@@ -449,8 +450,7 @@ void OnDeinit(const int reason)
 //==================================================================
 void OnTimer()
 {
-   if(InpUseBotControl)
-      ReadBridgeFile();
+   ReadBridgeFile();
 }
 
 // Strategiya nomini (bot yuboradigan) ENUM_PRESET ga aylantirish
@@ -493,6 +493,7 @@ void ReadBridgeFile()
    if(h==INVALID_HANDLE)
       return; // fayl hali yo'q — input sozlamalari bilan ishlaydi
 
+   string engine   = "";
    string strategy = "";
    string tfStr    = "";
    string symStr   = "";
@@ -509,7 +510,8 @@ void ReadBridgeFile()
       string key = StringSubstr(line, 0, pos);
       string val = StringSubstr(line, pos+1);
 
-      if(key=="enabled")        enabled = (StringToInteger(val)==1);
+      if(key=="engine")             engine = val;
+      else if(key=="enabled")       enabled = (StringToInteger(val)==1);
       else if(key=="strategy")  strategy = val;
       else if(key=="symbol")    symStr = val;
       else if(key=="timeframe") tfStr = val;
@@ -519,6 +521,21 @@ void ReadBridgeFile()
       else if(key=="risk")      risk = StringToDouble(val);
    }
    FileClose(h);
+
+   // Engine guard InpUseBotControl'dan mustaqil. Python dvigateli faol
+   // bo'lsa EA hech qachon yangi savdo ochmaydi.
+   if(engine=="PYTHON")
+   {
+      g_engineAllowsEA = false;
+      g_botEnabled = false;
+      return;
+   }
+   g_engineAllowsEA = true;
+
+   // Standalone EA rejimida faqat engine guard qo'llanadi; botning qolgan
+   // strategy/symbol/lot override qiymatlari Inputs'ni o'zgartirmaydi.
+   if(!InpUseBotControl)
+      return;
 
    // Qiymatlarni qo'llash
    g_botEnabled = enabled;
@@ -623,10 +640,10 @@ void BuildPreset(ENUM_PRESET preset)
          LoadCond(g_sell[0], true, IND_MACD_MAIN, 12, OP_CROSS_BELOW, CMP_IND, 0, IND_MACD_SIGNAL, 9);
          break;
 
-      //--- 4) Bollinger Bounce: narx pastki chiziqdan past -> BUY ---
+      //--- 4) Bollinger Bounce: band tashqarisidan ichkariga qaytsa ---
       case PRESET_BOLLINGER_BOUNCE:
-         LoadCond(g_buy[0],  true, IND_PRICE, 0, OP_LESS,    CMP_IND, 0, IND_BB_LOWER, InpPR_BB_Period);
-         LoadCond(g_sell[0], true, IND_PRICE, 0, OP_GREATER, CMP_IND, 0, IND_BB_UPPER, InpPR_BB_Period);
+         LoadCond(g_buy[0],  true, IND_PRICE, 0, OP_CROSS_ABOVE, CMP_IND, 0, IND_BB_LOWER, InpPR_BB_Period);
+         LoadCond(g_sell[0], true, IND_PRICE, 0, OP_CROSS_BELOW, CMP_IND, 0, IND_BB_UPPER, InpPR_BB_Period);
          break;
 
       //--- 5) Stochastic: Stoch<Buy -> BUY, Stoch>Sell -> SELL ---
@@ -690,6 +707,10 @@ void OnTick()
    // Ochiq pozitsiyalarni boshqarish (har tickda)
    ManageOpenPositions();
 
+   // Engine guard bot boshqaruvi inputidan mustaqil ishlaydi.
+   if(!g_engineAllowsEA)
+      return;
+
    // Bot boshqaruvi: bot to'xtatgan bo'lsa yangi savdo ochilmaydi
    if(InpUseBotControl && !g_botEnabled)
       return;
@@ -717,23 +738,25 @@ void OnTick()
    if(InpUseMaxSpread && CurrentSpreadPoints() > InpMaxSpread)
       return;
 
-   // Maksimal pozitsiya soni
-   if(CountPositions() >= InpMaxPositions)
-      return;
-
-   // Signal hisoblash
+   // Signal hisoblash (faqat yopilgan barlar bo'yicha)
    bool buySignal  = EvaluateSide(g_buy,  g_buyLogic,  g_buyVotes);
    bool sellSignal = EvaluateSide(g_sell, g_sellLogic, g_sellVotes);
 
-   // Qarama-qarshi signalda yopish
+   // Bir vaqtda ikkalasi ham signal bersa — pozitsiyani ham yopmaymiz,
+   // yangi savdo ham ochmaymiz (ziddiyatli signal).
+   if(buySignal && sellSignal)
+      return;
+
+   // Qarama-qarshi signalda yopish maksimal pozitsiya filtridan oldin
+   // bajarilishi kerak; aks holda MaxPositions=1 da bu rejim ishlamaydi.
    if(InpExitMode == EXIT_OPPOSITE_SIGNAL || InpExitMode == EXIT_BOTH)
    {
       if(buySignal)  ClosePositionsByType(POSITION_TYPE_SELL);
       if(sellSignal) ClosePositionsByType(POSITION_TYPE_BUY);
    }
 
-   // Bir vaqtda ikkalasi ham signal bersa - savdo qilmaymiz (ziddiyat)
-   if(buySignal && sellSignal)
+   // Yopishlardan keyin maksimal pozitsiya sonini qayta tekshiramiz.
+   if(CountPositions() >= InpMaxPositions)
       return;
 
    if(buySignal)
@@ -768,30 +791,32 @@ bool EvaluateSide(Condition &arr[], ENUM_LOGIC logic, int votesNeeded)
 //==================================================================
 bool EvaluateCondition(Condition &c)
 {
-   double a0, a1; // indikator A: shift 0 va shift 1 (cross uchun)
-   double b0, b1; // taqqoslash tomoni
+   // Signal faqat yopilgan barlarda hisoblanadi:
+   // current = oxirgi yopilgan bar (shift 1), previous = undan oldingi (shift 2).
+   double aCurrent, aPrevious;
+   double bCurrent, bPrevious;
 
-   if(!GetIndValue(c.indA, c.perA, 0, a0)) return(false);
-   if(!GetIndValue(c.indA, c.perA, 1, a1)) return(false);
+   if(!GetIndValue(c.indA, c.perA, 1, aCurrent))  return(false);
+   if(!GetIndValue(c.indA, c.perA, 2, aPrevious)) return(false);
 
    if(c.cmp==CMP_VALUE)
    {
-      b0 = c.val;
-      b1 = c.val;
+      bCurrent  = c.val;
+      bPrevious = c.val;
    }
    else // CMP_IND
    {
       if(c.indB==IND_NONE) return(false);
-      if(!GetIndValue(c.indB, c.perB, 0, b0)) return(false);
-      if(!GetIndValue(c.indB, c.perB, 1, b1)) return(false);
+      if(!GetIndValue(c.indB, c.perB, 1, bCurrent))  return(false);
+      if(!GetIndValue(c.indB, c.perB, 2, bPrevious)) return(false);
    }
 
    switch(c.op)
    {
-      case OP_GREATER:     return(a0 > b0);
-      case OP_LESS:        return(a0 < b0);
-      case OP_CROSS_ABOVE: return(a1 <= b1 && a0 > b0);
-      case OP_CROSS_BELOW: return(a1 >= b1 && a0 < b0);
+      case OP_GREATER:     return(aCurrent > bCurrent);
+      case OP_LESS:        return(aCurrent < bCurrent);
+      case OP_CROSS_ABOVE: return(aPrevious <= bPrevious && aCurrent > bCurrent);
+      case OP_CROSS_BELOW: return(aPrevious >= bPrevious && aCurrent < bCurrent);
    }
    return(false);
 }

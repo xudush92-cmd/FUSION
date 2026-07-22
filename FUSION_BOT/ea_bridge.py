@@ -73,7 +73,9 @@ def write_command(
             f.flush()
             os.fsync(f.fileno())
         os.replace(temp_path, path)
-        logger.info(f"EA buyruq fayli yozildi: {path}")
+        # DEBUG darajada: bu fayl har savdo tsiklida (5s) qayta yoziladi,
+        # INFO bo'lsa log to'lib ketadi. Guard baribir ishlayveradi.
+        logger.debug(f"EA buyruq fayli yozildi: {path}")
         return True, ""
     except Exception as e:
         try:

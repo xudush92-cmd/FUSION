@@ -704,12 +704,15 @@ void OnTick()
       g_tradingHalted  = false;
    }
 
-   // Ochiq pozitsiyalarni boshqarish (har tickda)
-   ManageOpenPositions();
-
-   // Engine guard bot boshqaruvi inputidan mustaqil ishlaydi.
+   // Engine guard eng birinchi tekshiriladi. engine=PYTHON bo'lsa EA
+   // umuman hech narsa qilmaydi (savdo ham, pozitsiya boshqaruvi ham) —
+   // shu tariqa Python bilan bir xil magic pozitsiyalarda SL/TP ustida
+   // kurash bo'lmaydi.
    if(!g_engineAllowsEA)
       return;
+
+   // Ochiq pozitsiyalarni boshqarish (har tickda)
+   ManageOpenPositions();
 
    // Bot boshqaruvi: bot to'xtatgan bo'lsa yangi savdo ochilmaydi
    if(InpUseBotControl && !g_botEnabled)

@@ -463,13 +463,19 @@ def _manage_open_positions(symbol: str, settings: dict) -> list:
     be_lock = spread + 5
     # Trailing ham o'sha nuqtada boshlanadi
     trail_start = max(int(tp_pts * trigger_pct), 1)
+    # Broker minimal stop masofasi (punktda). SL narxga shundan yaqin bo'lsa
+    # broker rad etadi (retcode 10016). Trailing shu masofani hurmat qilishi kerak.
+    stops_level = getattr(info, "trade_stops_level", 0) or 0
+    freeze_level = getattr(info, "trade_freeze_level", 0) or 0
+    min_stop = max(stops_level, freeze_level) + spread + 2
     # Trailing masofasi (SL narxdan qancha orqada tursin) — sozlamadan.
     # 0 bo'lsa standart = SL masofasi. Kattaroq = SL narxdan uzoqroq (bo'shroq).
+    # Broker minimal masofasidan kichik bo'lmasligi kafolatlanadi.
     user_trail = int(settings.get("trail_dist", 0))
     if user_trail > 0:
-        trail_dist = max(user_trail, spread + 10)
+        trail_dist = max(user_trail, spread + 10, min_stop)
     else:
-        trail_dist = max(sl_pts, spread + 10)
+        trail_dist = max(sl_pts, spread + 10, min_stop)
 
     positions = mt5.positions_get(symbol=symbol) or []
     mine = [p for p in positions if p.magic == MAGIC]
@@ -503,6 +509,12 @@ def _manage_open_positions(symbol: str, settings: dict) -> list:
 
         # O'zgargan bo'lsa — SL ni yangilash
         if new_sl != cur_sl and new_sl != 0.0:
+            # Broker minimal masofasini tekshirish: yangi SL narxga juda yaqin
+            # bo'lsa broker rad etadi (10016). Bunday holda bu tsiklda o'tkazamiz,
+            # narx yetarlicha uzoqlashgach keyingi tsiklda qayta urinamiz.
+            dist_pts = ((cur - new_sl) if is_buy else (new_sl - cur)) / point
+            if dist_pts < min_stop:
+                continue
             req = {
                 "action": mt5.TRADE_ACTION_SLTP,
                 "symbol": symbol,
@@ -514,6 +526,10 @@ def _manage_open_positions(symbol: str, settings: dict) -> list:
             result = mt5.order_send(req)
             if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
                 logger.info(f"SL yangilandi (ticket {pos.ticket}): {cur_sl} -> {new_sl}")
+            else:
+                # Endi jim qolmaydi — muvaffaqiyatsizlik log qilinadi.
+                code = result.retcode if result is not None else "None"
+                logger.warning(f"SL yangilanmadi (ticket {pos.ticket}): retcode {code}")
 
     return events
 

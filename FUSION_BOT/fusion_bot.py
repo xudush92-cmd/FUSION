@@ -75,6 +75,7 @@ def build_settings_text(settings: dict) -> str:
         f"🎯 Take Profit: {settings.get('tp', 600)} punkt\n"
         f"🔢 Maks. savdo soni: {int(settings.get('max_pos', 1))}\n"
         f"🕐 Timeframe: {settings.get('timeframe', 'M5')}\n"
+        f"📶 Maks. spread: {('avto (TP ning 1/3)' if int(settings.get('max_spread', 0)) == 0 else str(int(settings.get('max_spread', 0))) + ' punkt')}\n"
         "\n— Himoya —\n"
         f"🛑 Kunlik zarar limiti: {dl_txt}\n"
         f"🔒 Break-even: {onoff('breakeven')}\n"
@@ -729,6 +730,7 @@ async def user_change_setting(callback: CallbackQuery, state: FSMContext):
         "daily_loss": "Kunlik zarar limiti % (0=o'chiq, masalan: 5)",
         "be_pct": "BE/Trailing boshlanishi TP ning necha % ida (masalan: 25)",
         "trail_dist": "Trailing masofasi punkt (0=avto/SL, masalan: 3000)",
+        "max_spread": "Maks. ruxsat etilgan spread punkt (0=avto: TP ning 1/3)",
     }
     await state.update_data(setting_param=param)
     await callback.message.edit_text(f"✏️ {labels.get(param, param)} qiymatini kiriting:")
@@ -759,6 +761,7 @@ async def user_set_value(message: Message, state: FSMContext):
         "daily_loss": (0, 90, "Kunlik zarar limiti 0 dan 90% gacha (0=o'chiq)"),
         "be_pct": (5, 90, "BE/Trailing boshlanishi 5% dan 90% gacha"),
         "trail_dist": (0, 100000, "Trailing masofasi 0 (avto) yoki 50-100000 punkt"),
+        "max_spread": (0, 100000, "Maks. spread 0 (avto) yoki 1-100000 punkt"),
     }
 
     if param in limits:
@@ -768,7 +771,7 @@ async def user_set_value(message: Message, state: FSMContext):
             return
 
     # Butun son sifatida saqlanadigan sozlamalar
-    if param in ("max_pos", "be_pct", "trail_dist"):
+    if param in ("max_pos", "be_pct", "trail_dist", "max_spread"):
         value = int(value)
 
     await state.clear()
@@ -780,7 +783,8 @@ async def user_set_value(message: Message, state: FSMContext):
 
     labels = {"lot": "💎 Lot", "sl": "🛑 Stop Loss", "tp": "🎯 Take Profit",
               "max_pos": "🔢 Maks. savdo soni", "daily_loss": "🛑 Kunlik zarar",
-              "be_pct": "⏱ BE boshlanishi", "trail_dist": "📏 Trailing masofasi"}
+              "be_pct": "⏱ BE boshlanishi", "trail_dist": "📏 Trailing masofasi",
+              "max_spread": "📶 Maks. spread"}
     await message.answer(
         f"✅ {labels.get(param, param)} = {value} ga o'zgartirildi.",
         reply_markup=user_menu_kb()

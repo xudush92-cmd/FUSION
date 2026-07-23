@@ -670,10 +670,10 @@ void BuildPreset(ENUM_PRESET preset)
          g_sellLogic = LOGIC_AND;
          break;
 
-      //--- 8) Skalping RSI: RSI<25 BUY, RSI>75 SELL (qisqa davr) ---
+      //--- 8) Skalping RSI: zonadan qaytish (25 ustiga BUY, 75 ostiga SELL) ---
       case PRESET_SCALP_RSI:
-         LoadCond(g_buy[0],  true, IND_RSI, 7, OP_LESS,    CMP_VALUE, 25, IND_NONE, 0);
-         LoadCond(g_sell[0], true, IND_RSI, 7, OP_GREATER, CMP_VALUE, 75, IND_NONE, 0);
+         LoadCond(g_buy[0],  true, IND_RSI, 7, OP_CROSS_ABOVE, CMP_VALUE, 25, IND_NONE, 0);
+         LoadCond(g_sell[0], true, IND_RSI, 7, OP_CROSS_BELOW, CMP_VALUE, 75, IND_NONE, 0);
          break;
 
       //--- 9) Skalping MA: tez MA(5) sekin MA(20) ni kesib o'tsa ---
@@ -682,10 +682,10 @@ void BuildPreset(ENUM_PRESET preset)
          LoadCond(g_sell[0], true, IND_MA, 5, OP_CROSS_BELOW, CMP_IND, 0, IND_MA, 20);
          break;
 
-      //--- 10) Skalping Stochastic: Stoch<15 BUY, Stoch>85 SELL ---
+      //--- 10) Skalping Stochastic: zonadan qaytish (15 ustiga BUY, 85 ostiga SELL) ---
       case PRESET_SCALP_STOCH:
-         LoadCond(g_buy[0],  true, IND_STOCH, 5, OP_LESS,    CMP_VALUE, 15, IND_NONE, 0);
-         LoadCond(g_sell[0], true, IND_STOCH, 5, OP_GREATER, CMP_VALUE, 85, IND_NONE, 0);
+         LoadCond(g_buy[0],  true, IND_STOCH, 5, OP_CROSS_ABOVE, CMP_VALUE, 15, IND_NONE, 0);
+         LoadCond(g_sell[0], true, IND_STOCH, 5, OP_CROSS_BELOW, CMP_VALUE, 85, IND_NONE, 0);
          break;
    }
 }

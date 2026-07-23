@@ -45,6 +45,10 @@ _day_start: dict = {}
 # Kunlik limit haqida bir marta xabar berish uchun: user_id -> sana
 _daily_halt_notified: dict = {}
 
+# Spread keng bo'lgani haqida takror xabar bermaslik uchun: user_id -> vaqt
+_last_spread_skip: dict = {}
+SPREAD_MSG_REPEAT_SEC = 300  # spread haqida 5 daqiqada bir marta xabar
+
 
 # ==================================================================
 #                       INDIKATORLAR
@@ -196,8 +200,10 @@ def compute_signal(strategy: str, rates) -> str | None:
 
     elif strategy == "SCALP_RSI":
         r = rsi(close, 7)
-        if r[c] < 25: return "BUY"
-        if r[c] > 75: return "SELL"
+        # Zonadan QAYTISH tasdig'i (falling-knife dan himoya):
+        # oldingi yopilgan bar oversold/overbought zonada, oxirgi bar zonadan chiqqan.
+        if r[p] < 25 and r[c] >= 25: return "BUY"
+        if r[p] > 75 and r[c] <= 75: return "SELL"
 
     elif strategy == "MA_CROSSOVER":
         f = ema(close, 50); s = ema(close, 200)
@@ -228,8 +234,9 @@ def compute_signal(strategy: str, rates) -> str | None:
 
     elif strategy == "SCALP_STOCH":
         k = stochastic_k(high, low, close, 5, 3)
-        if k[c] < 15: return "BUY"
-        if k[c] > 85: return "SELL"
+        # Zonadan QAYTISH tasdig'i: oldingi bar zonada, oxirgi bar zonadan chiqqan.
+        if k[p] < 15 and k[c] >= 15: return "BUY"
+        if k[p] > 85 and k[c] <= 85: return "SELL"
 
     elif strategy == "CCI":
         cc = cci(high, low, close, 14)
@@ -254,6 +261,34 @@ def _normalize_lot(info, lot: float) -> float:
     lot = round(lot / step) * step
     lot = max(info.volume_min, min(info.volume_max, lot))
     return round(lot, 2)
+
+
+def _spread_too_wide(symbol: str, tp_pts: int, settings: dict) -> tuple[bool, int, int]:
+    """
+    Joriy spread savdo ochish uchun juda kengmi tekshiradi (ayniqsa skalping uchun).
+
+    - Agar sozlamada max_spread > 0 bo'lsa, u qat'iy chegara sifatida ishlatiladi.
+    - Aks holda AVTO rejim: spread TP ning 1/3 qismidan oshmasligi kerak
+      (spread maqsad foydaning katta qismini yeb qo'ysa, savdo mantiqsiz).
+
+    Qaytaradi: (juda_kengmi, joriy_spread, ruxsat_etilgan_maksimal).
+    """
+    info = mt5.symbol_info(symbol)
+    if info is None:
+        return False, 0, 0  # ma'lumot yo'q — to'smaymiz
+    spread = getattr(info, "spread", 0) or 0
+
+    max_spread = int(settings.get("max_spread", 0))
+    if max_spread > 0:
+        return spread > max_spread, spread, max_spread
+
+    # AVTO rejim: TP ning uchdan biri
+    if tp_pts and tp_pts > 0:
+        auto_cap = int(tp_pts / 3)
+        if auto_cap > 0 and spread > auto_cap:
+            return True, spread, auto_cap
+
+    return False, spread, 0
 
 
 def _filling_type(info):
@@ -723,6 +758,20 @@ def trade_once_for_user(user: dict, settings: dict) -> list:
     lot = float(settings.get("lot", 0.10))
     sl_pts = sl_pts_cfg
     tp_pts = tp_pts_cfg
+
+    # SPREAD FILTRI: spread juda keng bo'lsa savdo ochilmaydi (skalping himoyasi).
+    too_wide, cur_spread, max_allowed = _spread_too_wide(symbol, tp_pts, settings)
+    if too_wide:
+        uid = user["user_id"]
+        now = time.time()
+        prev = _last_spread_skip.get(uid, 0)
+        if now - prev >= SPREAD_MSG_REPEAT_SEC:
+            _last_spread_skip[uid] = now
+            events.append(
+                f"⏸ {symbol} {signal} o'tkazildi: spread juda keng "
+                f"({cur_spread} > {max_allowed} punkt). Spread torayganda savdo ochiladi."
+            )
+        return events
 
     # 1-QADAM: Lotni ochish (SL/TP siz)
     ok, err, ticket = _open_trade(symbol, signal, lot)
